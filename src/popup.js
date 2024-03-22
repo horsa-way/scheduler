@@ -9,6 +9,7 @@ export default class Popup {
     make() {
         this.parent.innerHTML = `
             <div class="title"></div>
+            <div class="description"></div>
             <div class="subtitle"></div>
             <div class="pointer"></div>
         `;
@@ -16,6 +17,7 @@ export default class Popup {
         this.hide();
 
         this.title = this.parent.querySelector('.title');
+        this.description = this.parent.querySelector('.description');
         this.subtitle = this.parent.querySelector('.subtitle');
         this.pointer = this.parent.querySelector('.pointer');
     }
@@ -37,6 +39,11 @@ export default class Popup {
         } else {
             // set data
             this.title.innerHTML = options.title;
+            this.description.innerHTML = options.description;
+            if (options.description === '')
+                this.description.classList.remove('description');
+            else
+                this.description.classList.add('description');
             this.subtitle.innerHTML = options.subtitle;
             this.parent.style.width = width + 'px';
         }
@@ -50,12 +57,12 @@ export default class Popup {
         }
         const middle_popup = width / 2;
 
-        if (position_meta.y + this.parent.clientHeight + 60 > off_set_height) {
+        if (position_meta.y + this.parent.clientHeight + 50 > off_set_height) {
             this.parent.style.left = (options.x - middle_popup) + 'px';
             this.parent.style.top = (position_meta.y - this.parent.offsetHeight - 10) + 'px';
             this.pointer.style.transform = 'rotateZ(0deg)';
             this.pointer.style.left = middle_popup + 'px';
-            this.pointer.style.top = (this.parent.offsetHeight) + 'px';
+            this.pointer.style.top = (this.parent.offsetHeight + 0.5) + 'px';
         } else {
             this.parent.style.left = (options.x - middle_popup) + 'px';
             this.parent.style.top = (position_meta.y + position_meta.height + 10) + 'px';
@@ -73,7 +80,7 @@ export default class Popup {
         let width;
         const char_width = 6;
 
-        if (title_length < 20) 
+        if (title_length < 20)
             width = 20 * char_width;
         else
             width = title_length * char_width;

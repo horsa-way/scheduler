@@ -103,7 +103,7 @@ export default class Scheduler {
             container_height: 300,
             header_height: 50,
             column_width: 30,
-            fixed_column_width: 120,
+            // fixed_column_width: 120,
             step: 24,
             date_start: null,
             date_end: null,
@@ -203,6 +203,9 @@ export default class Scheduler {
             if (!task.id) {
                 task.id = generate_id(task);
             }
+            //description
+            if (!task.description)
+                task.description = '';
 
             return task;
         }).filter(t => (
@@ -250,7 +253,7 @@ export default class Scheduler {
             }
 
             for (let i = 0; i < this.options.fixed_columns.length; i++)
-                row.cell_wrapper[i] = [];
+                row.cell_wrapper[i] = {};
 
             row.y += sum_y;
             this.rows.push(row);
@@ -413,7 +416,7 @@ export default class Scheduler {
             return;
         }
         // make_grid_background
-        const column_grid_width = this.options.fixed_columns.length * this.options.fixed_column_width;
+        const column_grid_width = this.options.fixed_columns.reduce((acc, curr) => acc + curr.width, 0);
         const sum_rows_height = this.rows[this.rows.length - 1].y + this.rows[this.rows.length - 1].height;
         const grid_height = sum_rows_height;
 
@@ -426,15 +429,13 @@ export default class Scheduler {
             append_to: this.fixed_col_layers.grid
         });
         $.attr(this.$column_svg, {
-            height: grid_height, //+ 30,
+            height: grid_height,
             width: column_grid_width,
         });
 
         // make_grid_rows // praticamente è identica, cambia solo il layer e la width
         const rows_layer = createSVG('g', { append_to: this.fixed_col_layers.grid });
         const lines_layer = createSVG('g', { append_to: this.fixed_col_layers.grid });
-
-        const row_width = this.options.fixed_columns.length * this.options.fixed_column_width;
 
         let i = 0;
 
@@ -445,7 +446,7 @@ export default class Scheduler {
             const rect = createSVG('rect', {
                 x: 0,
                 y: row_y,
-                width: row_width,
+                width: column_grid_width,
                 height: row_height,
                 class: 'grid-row',
                 'data-id': row,
@@ -457,7 +458,7 @@ export default class Scheduler {
             const fixed_line = createSVG('line', {
                 x1: 0,
                 y1: row_y + row_height,
-                x2: row_width,
+                x2: column_grid_width,
                 y2: row_y + row_height,
                 class: 'row-line',
                 append_to: lines_layer,
@@ -469,43 +470,38 @@ export default class Scheduler {
         }
 
         // make_grid_header
-        const header_width = this.options.fixed_columns.length * this.options.fixed_column_width;
         const header_height = this.options.header_height + 10;
         createSVG('rect', {
             x: 0,
             y: 0,
-            width: header_width,
+            width: column_grid_width,
             height: header_height,
             class: 'grid-header',
             append_to: this.fixed_col_layers.header
         });
 
-        // make_grid_ticks
-        let tick_x = this.options.fixed_column_width;
-        let tick_y = 0;
-        let tick_height = sum_rows_height;
-        for (let _ of this.options.fixed_columns) {
-            createSVG('path', {
-                d: `M ${tick_x} ${tick_y} v ${tick_height}`,
-                class: 'tick thick',
-                append_to: this.fixed_col_layers.grid,
-            });
-
-            tick_x += this.options.fixed_column_width;
-        }
-
         // make_dates -> header
         const pos_y = this.options.header_height;
-        let pos_x = this.options.fixed_column_width / 2;
+        let pos_x = 0;
         for (let column of this.options.fixed_columns) {
+            pos_x += column.width / 2;
             createSVG('text', {
                 x: pos_x,
                 y: pos_y,
-                innerHTML: column,
+                innerHTML: column.header,
                 class: 'lower-text',
                 append_to: this.fixed_col_layers.header
             });
-            pos_x += (pos_x * 2);
+            pos_x += column.width / 2;
+
+            // make_grid_ticks
+            let tick_y = 0;
+            let tick_height = sum_rows_height;
+            createSVG('path', {
+                d: `M ${pos_x} ${tick_y} v ${tick_height}`,
+                class: 'tick thick',
+                append_to: this.fixed_col_layers.grid,
+            });
         }
 
         // make_bars
@@ -513,39 +509,42 @@ export default class Scheduler {
     }
 
     make_cells() {
-        for (let r = 0; r < this.options.rows.length; r++) {
-            const row_height = this.rows[r].height;
-            const row_y = this.rows[r].y;
-
-            for (let c = 0; c < this.options.fixed_columns.length; c++) {
+        for (let row of this.rows) {
+            const row_height = row.height;
+            const row_y = row.y;
+            let pos_x = 0;
+            let c = 0;
+            for (let column of this.options.fixed_columns) {
                 const cell_wrapper = createSVG('g', {
                     class: 'cell-wrapper',
-                    'data-row-id': this.options.rows[r],
-                    'data-col-id': this.options.fixed_columns[c],
+                    'data-row-id': row.id,
+                    'data-col-id': column.id,
                     append_to: this.fixed_col_layers.cell,
                 });
 
                 const fixed_cell = createSVG('rect', {
-                    x: c * this.options.fixed_column_width,
+                    x: pos_x,
                     y: row_y,
-                    width: this.options.fixed_column_width,
+                    width: column.width,
                     height: row_height,
                     append_to: cell_wrapper,
                 });
-                this.rows[r].cell_wrapper[c].fixed_cell = fixed_cell;
+                row.cell_wrapper[c].fixed_cell = fixed_cell;
 
 
-                const cell = this.cells.find(t => t.row === this.options.rows[r] && t.column === this.options.fixed_columns[c]);
+                const cell = this.cells.find(t => t.row === row.id && t.column === column.id);
                 if (cell) {
                     const text = createSVG('text', {
-                        x: this.options.fixed_column_width / 2 + c * this.options.fixed_column_width,
+                        x: (column.width / 2) + pos_x,
                         y: 24 + row_y,
                         innerHTML: ((String(cell.value).slice(0, 25)) + (String(cell.value).length > 25 ? "..." : "")),
                         class: 'lower-text',
                         append_to: cell_wrapper
                     });
-                    this.rows[r].cell_wrapper[c].text = text;
+                    row.cell_wrapper[c].text = text;
                 }
+                pos_x += column.width;
+                c++;
             }
         }
     }
@@ -743,6 +742,8 @@ export default class Scheduler {
             last_date = last_date_info.date;
         } else {
             last_date = date_utils.add(date, 1, 'year');
+            last_date = date_utils.add(last_date, 1, 'month');
+            last_date = date_utils.add(last_date, 1, 'day');
         }
         const date_text = {
             Hour_lower: date_utils.format(
@@ -823,10 +824,10 @@ export default class Scheduler {
         const x_pos = {
             Hour_lower: 0,
             Hour_upper: column_width * 24 / 2,
-            'Quarter Day_lower': (column_width * 4) / 2,
-            'Quarter Day_upper': 0,
-            'Half Day_lower': (column_width * 2) / 2,
-            'Half Day_upper': 0,
+            'Quarter Day_lower': 0,
+            'Quarter Day_upper': column_width + (column_width / 2),
+            'Half Day_lower': 0,
+            'Half Day_upper': column_width,
             Day_lower: column_width / 2,
             Day_upper: (column_width * 30) / 2,
             Week_lower: 0,
@@ -1156,7 +1157,6 @@ export default class Scheduler {
             $.attr($handle, 'points', bar.get_progress_polygon_points());
             $bar_progress.finaldx = dx;
         });
-        // aggiornato altrimenti con qualsiasi evento avrebbe mostrato il console log del progresso
         $.on(this.$svg, 'mouseup', () => {
             if (is_resizing) {
                 if (!($bar_progress && $bar_progress.finaldx)) return;
@@ -1199,23 +1199,27 @@ export default class Scheduler {
         return row_height;
     }
 
-    compute_row_y(row_index) {
+    compute_row_y(row_index, fixed_column_width) {
         let sum_y = this.rows[row_index].y;
         for (let i = row_index; i < this.rows.length; i++) {
             $.attr(this.rows[i].rect, 'y', sum_y);
-            $.attr(this.rows[i].fixed_rect, 'y', sum_y);
-            //cell
-            for (let c = 0; c < this.options.fixed_columns.length; c++) {
-                $.attr(this.rows[i].cell_wrapper[c].fixed_cell, 'y', sum_y);
-                if (this.rows[i].cell_wrapper[c].text)
-                    $.attr(this.rows[i].cell_wrapper[c].text, 'y', sum_y + 24);
+            if (fixed_column_width !== 0) {
+                $.attr(this.rows[i].fixed_rect, 'y', sum_y);
+                //cell
+                for (let c = 0; c < this.options.fixed_columns.length; c++) {
+                    $.attr(this.rows[i].cell_wrapper[c].fixed_cell, 'y', sum_y);
+                    if (this.rows[i].cell_wrapper[c].text)
+                        $.attr(this.rows[i].cell_wrapper[c].text, 'y', sum_y + 24);
+                }
             }
 
             this.rows[i].y = sum_y;
             sum_y += this.rows[i].height;
             //line
-            $.attr(this.rows[i].fixed_line, 'y1', sum_y);
-            $.attr(this.rows[i].fixed_line, 'y2', sum_y);
+            if (fixed_column_width !== 0) {
+                $.attr(this.rows[i].fixed_line, 'y1', sum_y);
+                $.attr(this.rows[i].fixed_line, 'y2', sum_y);
+            }
             $.attr(this.rows[i].line, 'y1', sum_y);
             $.attr(this.rows[i].line, 'y2', sum_y);
         }
@@ -1224,6 +1228,7 @@ export default class Scheduler {
     overlap(start_row_index, end_row_index) {
         let render = false;
         let update_from_this_row_index = end_row_index;
+        const fixed_column_width = parseInt(this.$column_svg.getAttribute('width'));
 
         const end_row = this.rows[end_row_index];
         const new_end_sub_level = this.compute_row_sub_level(end_row.id);
@@ -1232,11 +1237,12 @@ export default class Scheduler {
             end_row.height = this.compute_row_height(end_row.sub_level.length);
 
             $.attr(end_row.rect, 'height', end_row.height);
-            $.attr(end_row.fixed_rect, 'height', end_row.height);
-            for (let i = 0; i < this.options.fixed_columns.length; i++) {
-                $.attr(end_row.cell_wrapper[i].fixed_cell, 'height', end_row.height);
+            if (fixed_column_width !== 0) {
+                $.attr(end_row.fixed_rect, 'height', end_row.height);
+                for (let i = 0; i < this.options.fixed_columns.length; i++) {
+                    $.attr(end_row.cell_wrapper[i].fixed_cell, 'height', end_row.height);
+                }
             }
-
             render = true;
         } else {
             const bars_in_same_row = this.bars.filter(bar =>
@@ -1256,11 +1262,12 @@ export default class Scheduler {
                 start_row.height = this.compute_row_height(start_row.sub_level.length);
 
                 $.attr(start_row.rect, 'height', start_row.height);
-                $.attr(start_row.fixed_rect, 'height', start_row.height);
-                for (let i = 0; i < this.options.fixed_columns.length; i++) {
-                    $.attr(start_row.cell_wrapper[i].fixed_cell, 'height', start_row.height);
+                if (fixed_column_width !== 0) {
+                    $.attr(start_row.fixed_rect, 'height', start_row.height);
+                    for (let i = 0; i < this.options.fixed_columns.length; i++) {
+                        $.attr(start_row.cell_wrapper[i].fixed_cell, 'height', start_row.height);
+                    }
                 }
-
                 render = true;
                 if (start_row_index < end_row_index)
                     update_from_this_row_index = start_row_index;
@@ -1269,15 +1276,14 @@ export default class Scheduler {
 
         if (render) {
             const scrollTop = this.$container.scrollTop;
-            this.update_from_row(update_from_this_row_index);
+            this.compute_row_y(update_from_this_row_index, fixed_column_width);
+            this.update_from_row(update_from_this_row_index, fixed_column_width);
             if (scrollTop > (this.$svg.getAttribute('height') - this.$container.clientHeight))
                 this.$container.scrollTop = scrollTop - (this.options.bar_height * 2);
         }
     }
 
-    update_from_row(row_index) {
-
-        this.compute_row_y(row_index);
+    update_from_row(row_index, fixed_column_width) {
 
         const max_height = this.rows[this.rows.length - 1].y + this.rows[this.rows.length - 1].height;
 
@@ -1285,18 +1291,22 @@ export default class Scheduler {
         this.$svg.setAttribute('height', max_height);
         const grid_background = this.$svg.querySelector('g.grid > rect');
         $.attr(grid_background, 'height', max_height);
-        //fixed background
-        this.$column_svg.setAttribute('height', max_height);
-        const fixed_background = this.$column_svg.querySelector('g.grid > rect');
-        $.attr(fixed_background, 'height', max_height);
-        //fixed ticks
-        const fixed_ticks = Array.from(this.$column_svg.querySelectorAll('g.grid > path'));
-        fixed_ticks.forEach(tick => {
-            const curr_d = tick.getAttribute('d');
-            const new_d = curr_d.replace(/v\s*[^v]*$/, `v ${max_height}`);
 
-            $.attr(tick, 'd', new_d);
-        });
+        if (fixed_column_width !== 0) {
+            //fixed background
+            this.$column_svg.setAttribute('height', max_height);
+            const fixed_background = this.$column_svg.querySelector('g.grid > rect');
+            $.attr(fixed_background, 'height', max_height);
+
+            //fixed ticks
+            const fixed_ticks = Array.from(this.$column_svg.querySelectorAll('g.grid > path'));
+            fixed_ticks.forEach(tick => {
+                const curr_d = tick.getAttribute('d');
+                const new_d = curr_d.replace(/v\s*[^v]*$/, `v ${max_height}`);
+
+                $.attr(tick, 'd', new_d);
+            });
+        }
         //ticks
         const ticks = Array.from(this.$svg.querySelectorAll('g.grid > path'));
         ticks.forEach(tick => {
@@ -1329,8 +1339,8 @@ export default class Scheduler {
         //edges del container
         var edgeTop = this.$container.offsetTop + this.options.header_height + (this.options.padding * 3);
         var edgeLeft = this.$container.offsetLeft + (this.options.padding * 8);
-        var edgeBottom = this.$container.offsetHeight;
-        var edgeRight = this.$container.offsetWidth;
+        var edgeBottom = this.$container.clientHeight + (this.options.padding * 2);
+        var edgeRight = this.$container.clientWidth + this.$column_container.offsetWidth - (this.options.padding * 3);
         //variabili per capire in quale punto ci si trova
         var isInLeftEdge = (viewportX < edgeLeft);
         var isInRightEdge = (viewportX > edgeRight);

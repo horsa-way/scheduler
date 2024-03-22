@@ -179,6 +179,8 @@ export default class Bar {
 
     setup_click_event() {
         $.on(this.group, 'mouseover', '.bar-wrapper', (e) => {
+            if (this.scheduler.bar_being_dragged)
+                return;
             // if (!e.target.classList.contains('bar')) return;
             this.show_popup(e.offsetX);
         });
@@ -223,6 +225,7 @@ export default class Bar {
         this.scheduler.show_popup({
             target_element: this.$bar,
             title: this.task.name,
+            description: this.task.description,
             subtitle: subtitle,
             task: this.task,
             x: x,
@@ -266,11 +269,16 @@ export default class Bar {
         if (Number(this.task._start) !== Number(new_start_date)) {
             changed = true;
             this.task._start = new_start_date;
+            this.task.start = new_start_date;
         }
 
         if (Number(this.task._end) !== Number(new_end_date)) {
             changed = true;
             this.task._end = new_end_date;
+            if (new_end_date.getHours() === 0)
+                this.task.end = date_utils.add(new_end_date, -1, 'second');
+            else
+                this.task.end = new_end_date;
         }
 
         const new_index = this.compute_index();
