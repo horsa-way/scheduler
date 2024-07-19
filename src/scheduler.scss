@@ -11,26 +11,46 @@ $blue: #a3a3ff !default;
 $handle-color: #ddd !default;
 
 .scheduler {
+    font-family: "Segoe UI", "Segoe WP", Segoe, device-segoe, Tahoma, Helvetica, Arial, sans-serif;
+
     .grid-background {
         fill: none;
     }
 
-    .grid-header {
-        fill: #ffffff;
+    .grid-header{
+        fill: #cfcbcb;
         stroke: $border-color;
         stroke-width: 1.4;
     }
 
     .grid-row {
         fill: #ffffff;
+
+        &.selected-row {
+            fill: #0987f5;
+        }
     }
 
     .grid-row:nth-child(even) {
         fill: $light-bg;
+
+        &.selected-row {
+            fill: #0987f5;
+        }
     }
 
     .row-line {
         stroke: $light-border-color;
+    }
+
+    .header-tick {
+        stroke: $border-color;
+        stroke-width: 5;
+        stroke-dasharray: 5, 2;
+    }
+
+    .header-tick:hover {
+        cursor: ew-resize;
     }
 
     .tick {
@@ -45,6 +65,13 @@ $handle-color: #ddd !default;
     .today-highlight {
         fill: $light-yellow;
         opacity: 0.5;
+    }
+
+    .weekend-highlight {
+        position: inherit;
+        fill: rgba(241, 196, 15, 0.3);
+        ;
+        opacity: 0.7;
     }
 
     .arrow {
@@ -141,10 +168,14 @@ $handle-color: #ddd !default;
         font-size: 12px;
         text-anchor: middle;
         user-select: none;
+
+        &.bold {
+            font-weight: 600;
+        }
     }
 
     .upper-text {
-        fill: $text-light;
+        fill: $text-color;
     }
 
     .lower-text {
@@ -158,23 +189,29 @@ $handle-color: #ddd !default;
     .cell-wrapper {
         fill: transparent;
         user-select: none;
+
+        &.selected-row {
+            fill: #0987f5;
+        }
     }
 }
 
 .scheduler-container {
+    font-family: "Segoe UI", "Segoe WP", Segoe, device-segoe, Tahoma, Helvetica, Arial, sans-serif;
     display: flex;
     font-size: 12px;
 
     .scheduler-columns-container {
         flex: 0 0 auto;
-        overflow: hidden;
-        padding-bottom: 20px;
+        scrollbar-width: none;
+        overflow: auto;
+        padding-bottom: 17px;
     }
 
     .scheduler-grid-container {
         flex: 1;
         overflow: auto;
-        position: relative;    
+        position: relative;
     }
 
     .popup-wrapper {
