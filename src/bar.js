@@ -22,27 +22,20 @@ export default class Bar {
 
     prepare_values() {
         let task_end = this.task._end;
-        const task_end_timezone_offset = this.task._end.getTimezoneOffset();
-        const task_start_timezone_offset = this.task._start.getTimezoneOffset();
-        const starting_timezone_offset = this.scheduler.scheduler_start.getTimezoneOffset();
-        if ((task_end_timezone_offset !== starting_timezone_offset &&
-            task_start_timezone_offset === starting_timezone_offset) ||
-            task_end_timezone_offset === starting_timezone_offset &&
-            task_start_timezone_offset !== starting_timezone_offset)
-            if (task_end_timezone_offset === -60)
-                task_end = date_utils.add(task_end, -1, 'hour');
-        // else
-        //     task_end = date_utils.add(task_end, 1, 'hour');
-
         this.invalid = this.task.invalid;
         this.height = this.scheduler.options.bar_height;
         this.handle_width = 8;
         this.x = this.compute_x();
         this.y = this.compute_y();
         this.corner_radius = this.scheduler.options.bar_corner_radius;
-        this.duration =
-            date_utils.diff(task_end, this.task._start, 'hour') /
-            this.scheduler.options.step;
+        if (this.scheduler.view_is('Hour')) {
+            this.duration =
+                date_utils.diff(task_end, this.task._start, 'minute') /
+                this.scheduler.options.step;
+        } else
+            this.duration =
+                date_utils.diff(task_end, this.task._start, 'hour') /
+                this.scheduler.options.step;
         if (date_utils.diff(task_end, this.task._start, 'hour') < 1) {
             this.duration = 0.05;
             this.task.progress = 0;
@@ -232,12 +225,12 @@ export default class Bar {
     show_popup(e) {
         const start_date = date_utils.format(
             this.task._start,
-            'D MMM YYYY',
+            'D MMM YYYY HH:mm',
             this.scheduler.options.language
         );
         const end_date = date_utils.format(
-            date_utils.add(this.task._end, -1, 'second'),
-            'D MMM YYYY',
+            this.task._end,
+            'D MMM YYYY HH:mm',
             this.scheduler.options.language
         );
         const subtitle = start_date + ' - ' + end_date;
@@ -284,44 +277,17 @@ export default class Bar {
         this.update_arrow_position();
     }
 
-    position_changed() {
+    position_changed(calc_start, calc_end) {
         let changed = false;
         let { new_start_date, new_end_date } = this.compute_start_end_date();
-        if (Number(this.task._start) !== Number(new_start_date)) {
+        if (calc_start) {
             changed = true;
-            if (!(this.scheduler.view_is('Hour') ||
-                this.scheduler.view_is('Quarter Day') ||
-                this.scheduler.view_is('Half Day'))) {
-                const start_hours = this.task._start.getHours();
-
-                new_start_date.setHours(start_hours);
-            }
-            const start_minutes = this.task._start.getMinutes();
-            const start_seconds = this.task._start.getSeconds();
-            new_start_date.setMinutes(start_minutes);
-            new_start_date.setSeconds(start_seconds);
-
             this.task._start = new_start_date;
             this.task.start = new_start_date;
         }
 
-        if (Number(this.task._end) !== Number(new_end_date)) {
+        if (calc_end) {
             changed = true;
-            if (new_end_date.getHours() === 0)
-                new_end_date = date_utils.add(new_end_date, -1, 'second');
-            if (!(this.scheduler.view_is('Hour') ||
-                this.scheduler.view_is('Quarter Day') ||
-                this.scheduler.view_is('Half Day'))) {
-
-                const end_hours = this.task._end.getHours();
-
-                new_end_date.setHours(end_hours);
-            }
-            const end_minutes = this.task._end.getMinutes();
-            const end_seconds = this.task._end.getSeconds();
-            new_end_date.setMinutes(end_minutes);
-            new_end_date.setSeconds(end_seconds);
-
             this.task._end = new_end_date;
             this.task.end = new_end_date;
         }
@@ -358,17 +324,33 @@ export default class Bar {
     compute_start_end_date() {
         const bar = this.$bar;
         const x_in_units = bar.getX() / this.scheduler.options.column_width;
-        const new_start_date = date_utils.add(
-            this.scheduler.scheduler_start,
-            x_in_units * this.scheduler.options.step,
-            'hour'
-        );
+        let new_start_date;
+        if (this.scheduler.view_is('Hour'))
+            new_start_date = date_utils.add(
+                this.scheduler.scheduler_start,
+                x_in_units * this.scheduler.options.step,
+                'minute'
+            );
+        else
+            new_start_date = date_utils.add(
+                this.scheduler.scheduler_start,
+                x_in_units * this.scheduler.options.step,
+                'hour'
+            );
         const width_in_units = bar.getWidth() / this.scheduler.options.column_width;
-        const new_end_date = date_utils.add(
-            new_start_date,
-            width_in_units * this.scheduler.options.step,
-            'hour'
-        );
+        let new_end_date;
+        if (this.scheduler.view_is('Hour'))
+            new_end_date = date_utils.add(
+                new_start_date,
+                width_in_units * this.scheduler.options.step,
+                'minute'
+            );
+        else
+            new_end_date = date_utils.add(
+                new_start_date,
+                width_in_units * this.scheduler.options.step,
+                'hour'
+            );
 
         return { new_start_date, new_end_date };
     }
@@ -396,22 +378,17 @@ export default class Bar {
 
     compute_x() {
         const { step, column_width } = this.scheduler.options;
-        let task_start = this.task._start;
+        const task_start = this.task._start;
         const scheduler_start = this.scheduler.scheduler_start;
 
-        const diff = date_utils.diff(task_start, scheduler_start, 'hour');
+        let diff;
+        if (this.scheduler.view_is('Hour'))
+            diff = date_utils.diff(task_start, scheduler_start, 'minute');
+        else
+            diff = date_utils.diff(task_start, scheduler_start, 'hour');
+
         let x = Math.floor((diff / step) * column_width * 1000) / 1000;
 
-        const task_start_timezone_offset = task_start.getTimezoneOffset();
-        const starting_timezone_offset = scheduler_start.getTimezoneOffset();
-        if (task_start_timezone_offset !== starting_timezone_offset) {
-            if (task_start_timezone_offset === -60)
-                task_start = date_utils.add(task_start, -1, 'hour');
-            else if (starting_timezone_offset === -120)
-                task_start = date_utils.add(task_start, -2, 'hour');
-            const diff = date_utils.diff(task_start, scheduler_start, 'hour');
-            x = Math.floor((diff / step) * column_width * 1000) / 1000;
-        }
         return x;
     }
 
