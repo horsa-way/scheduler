@@ -334,10 +334,10 @@ export default class Scheduler {
             for (let task of this.tasks) {
                 // set global start and end date
                 if (!this.scheduler_start || task._start < this.scheduler_start) {
-                    this.scheduler_start = task._start;
+                    this.scheduler_start = date_utils.clone(task._start);
                 }
                 if (!this.scheduler_end || task._end > this.scheduler_end) {
-                    this.scheduler_end = task._end;
+                    this.scheduler_end = date_utils.clone(task._end);
                 }
             }
 
