@@ -305,8 +305,8 @@ export default class Bar {
         this.scheduler.trigger_event('position_change', [
             this.task,
             new_row,
-            new_start_date,
-            new_end_date,
+            date_utils.to_local(new_start_date),
+            date_utils.to_local(new_end_date),
         ]);
     }
 

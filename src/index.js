@@ -126,11 +126,9 @@ export default class Scheduler {
         this.options = Object.assign({}, default_options, options);
 
         if (this.options.date_start)
-            this.options.date_start = new Date(this.options.date_start);
+            this.options.date_start = date_utils.normalize_UTC(new Date(this.options.date_start));
         if (this.options.date_end)
-            this.options.date_end = new Date(this.options.date_end);
-        // else
-        //     this.options.date_end = date_utils.add(this.options.date_start, 2, 'year');
+            this.options.date_end = date_utils.normalize_UTC(new Date(this.options.date_end));
     }
 
     setup_cells(cells) {
@@ -157,8 +155,8 @@ export default class Scheduler {
     setup_task(task) {
         let need_to_be_lock = false;
         // convert to Date objects
-        task._start = new Date(task.start);
-        task._end = new Date(task.end);
+        task._start = date_utils.normalize_UTC(new Date(task.start));
+        task._end = date_utils.normalize_UTC(new Date(task.end));
         if (this.options.date_end)
             if (task._end > this.options.date_end)
                 need_to_be_lock = true;
@@ -334,10 +332,10 @@ export default class Scheduler {
             for (let task of this.tasks) {
                 // set global start and end date
                 if (!this.scheduler_start || task._start < this.scheduler_start) {
-                    this.scheduler_start = task._start;
+                    this.scheduler_start = date_utils.clone(task._start);
                 }
                 if (!this.scheduler_end || task._end > this.scheduler_end) {
-                    this.scheduler_end = task._end;
+                    this.scheduler_end = date_utils.clone(task._end);
                 }
             }
 
@@ -1169,7 +1167,7 @@ export default class Scheduler {
                     x_in_units * this.options.step,
                     'hour');
 
-            this.trigger_event('grid_dblclick', [data_id, datetime]);
+            this.trigger_event('grid_dblclick', [data_id, date_utils.to_local(datetime)]);
         });
 
         $.on(this.$container, 'scroll', e => {
