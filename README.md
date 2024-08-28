@@ -100,6 +100,51 @@ var scheduler = new Scheduler("#scheduler", tasks, cells, {
 });
 ```
 
+### Structure 
+The Scheduler class is designed to manage and organize tasks within a given wrapper element. It provides functionalities to set up and manage tasks, cells, and rows,, all of which are rendered as SVG elements. The appearance and layout of these elements are controlled via CSS. Below is a brief overview of the key methods and operations performed during the initialization of the Scheduler class.
+
+Constructor: constructor(wrapper, tasks, cells, options)
+The constructor initializes a new instance of the Scheduler class and takes the following parameters:
+```js
+export default class Scheduler {
+    constructor(wrapper, tasks, cells, options) {
+        this.setup_options(options);
+        this.setup_wrapper(wrapper);
+        this.setup_cells(cells);
+        this.setup_tasks(tasks);
+        this.setup_rows();
+        this.change_view_mode();
+        this.bind_events();
+    }
+}
+```
+wrapper: The container element where the scheduler will be rendered.
+tasks: An array representing the tasks to be managed and displayed by the scheduler.
+cells: This are the cells for the left columns.
+options: Configuration options to customize the behavior and appearance of the scheduler.
+
+#### Methods Called in Constructor
+setup_options(options):
+This method processes and applies the configuration options passed to the scheduler. It sets default values if no specific options are provided.
+
+setup_wrapper(wrapper):
+Initializes the wrapper element where the scheduler will be displayed.
+
+setup_cells(cells):
+Configures the single cell.
+
+setup_tasks(tasks):
+Prepares and organizes the tasks to be managed by the scheduler.
+
+setup_rows():
+Configures the rows.
+
+change_view_mode():
+Initializes the scheduler with a default view mode (e.g., by day, week, month).
+
+bind_events():
+Binds necessary event listeners to the scheduler, allowing interaction and dynamic updates (e.g., task dragging, resizing, etc.).
+
 ### Contributing
 If you want to contribute enhancements or fixes:
 
