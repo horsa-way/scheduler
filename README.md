@@ -31,10 +31,11 @@ var tasks = [
   {
     id: 'Task 1',
     name: 'Redesign website',
-    start: '2016-12-28',
-    end: '2016-12-31',
+    start: '2024-07-21T00:00:00.000Z',
+    end: '2024-07-31T00:00:00.000Z',
+    description: 'Redesign website description', //optional
     progress: 20,
-    dependencies: 'Task 2, Task 3',
+    dependencies: 'Task 2, Task 3', //optional
     row: 'row_id_1', // row where put the task
     custom_class: 'bar-milestone' // optional
   },
@@ -49,19 +50,36 @@ var cells = [
     {
         row: 'row_id_1',
         column: 'name',
-        value: 'name cell 1'
+        value: 'name cell 1',
+        tooltip: 'tooltip name cell 1'
     },
     {
         row: 'row_id_1',
         column: 'description',
-        value: 'description cell 1'
+        value: 'description cell 1',
+        tooltip: 'tooltip description cell 1'
+    },
+]
+var rows = ['row_id_1', 'row_id_2', 'row_id_3']
+var fixed_colums = [
+    { 
+        id: 'column_id_1', 
+        header: 'name',
+        width: 50 
+    },
+    { 
+        id: 'column_id_2', 
+        header: 'description', 
+        width: 70
+    },
+    { 
+        id: 'column_id_3',
+        header: 'prova',
+        width: 100
     },
 ]
 var scheduler = new Scheduler("#scheduler", tasks, cells, {
     header_height: 50,
-    column_width: 30,
-    step: 24,
-    view_modes: ['Quarter Day', 'Half Day', 'Day', 'Week', 'Month'],
     bar_height: 20,
     bar_corner_radius: 3,
     arrow_curve: 5,
@@ -74,11 +92,12 @@ var scheduler = new Scheduler("#scheduler", tasks, cells, {
     resize_right: true,
     drag_drop_x: true,
     drag_drop_y: true,
-    popup_position: ['left', 'bottom']
+    overlap: true,
+    moving_scroll_bar: true,
     date_start: 'YYYY-MM-DD',
     date_end: 'YYYY-MM-DD',
-    rows: ['row_id_1', 'row_id_2', 'row_id_3'],
-    fixed_columns: ['name', 'description'],
+    rows,
+    fixed_columns,
     on_task_dblclick: task => {
         console.log(task);
     },
@@ -140,10 +159,13 @@ setup_rows():
 Configures the rows.
 
 change_view_mode():
-Initializes the scheduler with a default view mode (e.g., by day, week, month).
+Initializes the scheduler with a default view mode (e.g., day, week, month). This method includes the render function that displays the scheduler on the screen.
 
 bind_events():
 Binds necessary event listeners to the scheduler, allowing interaction and dynamic updates (e.g., task dragging, resizing, etc.).
+
+#### Other components
+In addition, there are other components that assist in creating various objects within the scheduler, such as the Bar class, which is used to create and manage tasks as SVG elements, or the popup class to display information about the tasks or the cells, and the date_utils module, which handles operations on date objects.
 
 ### Contributing
 If you want to contribute enhancements or fixes:
