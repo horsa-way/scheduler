@@ -871,6 +871,13 @@ export default class Scheduler {
     get_date_info(date, last_date_info) {
         let column_width = this.options.column_width;
         let x_pos;
+        let hour_pointer;
+        let date_text;
+        const hour = [
+            '00', '01', '02', '03', '04', '05', '06', '07', '08', '09',
+            '10', '11', '12', '13', '14', '15', '16', '17', '18', '19',
+            '20', '21', '22', '23'
+        ];
         let last_date = null;
         if (last_date_info) {
             last_date = last_date_info.date;
@@ -879,16 +886,15 @@ export default class Scheduler {
             last_date = date_utils.add(last_date, 1, 'month');
             last_date = date_utils.add(last_date, 1, 'day');
         }
-        let date_text;
         if (this.view_is(VIEW_MODE.DAY)) {
             date_text = {
                 Day_lower:
                     date.getDate() !== last_date.getDate()
-                        ? date_utils.format(date, 'D ddd', this.options.language).substring(0, 5)
+                        ? date_utils.format(date, 'D dd', this.options.language)
                         : '',
                 Day_upper:
                     date.getMonth() !== last_date.getMonth()
-                        ? date_utils.format(date, 'MMMM YYYY', this.options.language)
+                        ? date_utils.format(date, 'MMM YYYY', this.options.language)
                         : '',
             };
             x_pos = {
@@ -896,20 +902,18 @@ export default class Scheduler {
                 Day_upper: (column_width * 30) / 2
             };
         } else if (this.view_is(VIEW_MODE.HOUR)) {
+            hour_pointer = last_date_info?.hour_pointer || 0;
             date_text = {
-                Hour_lower: date_utils.format(
-                    date,
-                    'HH',
-                    this.options.language
-                ),
+                Hour_lower: hour[hour_pointer],
                 Hour_upper:
-                    date.getDate() !== last_date.getDate()
+                    hour_pointer === 0
                         ? date_utils.format(date, 'ddd D MMM YYYY', this.options.language)
                         : '',
             };
+            hour_pointer = (hour_pointer < 23) ? hour_pointer + 1 : 0;
             x_pos = {
                 Hour_lower: 0,
-                Hour_upper: column_width * 24 / 2 - 1440
+                Hour_upper: column_width * 24 / 2
             };
         } else if (this.view_is(VIEW_MODE.WEEK)) {
             date_text = {
@@ -919,7 +923,7 @@ export default class Scheduler {
                         : date_utils.format(date, 'D', this.options.language),
                 Week_upper:
                     date.getMonth() !== last_date.getMonth()
-                        ? date_utils.format(date, 'MMMM YYYY', this.options.language)
+                        ? date_utils.format(date, 'MMM YYYY', this.options.language)
                         : '',
             };
             x_pos = {
@@ -927,46 +931,38 @@ export default class Scheduler {
                 Week_upper: (column_width * 4) / 2
             };
         } else if (this.view_is(VIEW_MODE.QUARTER_DAY)) {
+            hour_pointer = last_date_info?.hour_pointer || 0;
             date_text = {
-                'Quarter Day_lower': date_utils.format(
-                    date,
-                    'HH',
-                    this.options.language
-                ),
+                'Quarter Day_lower': hour[hour_pointer],
                 'Quarter Day_upper':
-                    date.getDate() !== last_date.getDate()
-                        ? date_utils.format(date, 'ddd D ' + date_utils.format(date, 'MMM').substring(0, 3) + ' YYYY', this.options.language)
+                    hour_pointer === 0
+                        ? date_utils.format(date, 'ddd D MMM YYYY', this.options.language)
                         : '',
             };
+            hour_pointer = (hour_pointer < 18) ? hour_pointer + 6 : 0;
             x_pos = {
                 'Quarter Day_lower': 0,
                 'Quarter Day_upper': column_width + (column_width / 2)
             };
         } else if (this.view_is(VIEW_MODE.HALF_DAY)) {
+            hour_pointer = last_date_info?.hour_pointer || 0;
             date_text = {
-                'Half Day_lower': date_utils.format(
-                    date,
-                    'HH',
-                    this.options.language
-                ),
+                'Half Day_lower': hour[hour_pointer],
                 'Half Day_upper':
-                    date.getDate() !== last_date.getDate()
+                    hour_pointer === 0
                         ? date.getMonth() !== last_date.getMonth()
-                            ? date_utils.format(
-                                date,
-                                date_utils.format(date, 'D ') + date_utils.format(date, 'ddd').substring(0, 2) + ' ' + date_utils.format(date, 'MMM').substring(0, 3),
-                                this.options.language
-                            )
-                            : date_utils.format(date, 'D ' + date_utils.format(date, 'ddd').substring(0, 2) + ' ' + date_utils.format(date, 'YYYY'), this.options.language)
+                            ? date_utils.format(date, 'D dd MMM', this.options.language)
+                            : date_utils.format(date, 'D dd MM YYY', this.options.language)
                         : '',
             };
+            hour_pointer = (hour_pointer < 12) ? hour_pointer + 12 : 0;
             x_pos = {
                 'Half Day_lower': 0,
                 'Half Day_upper': column_width
             };
         } else if (this.view_is(VIEW_MODE.MONTH)) {
             date_text = {
-                Month_lower: date_utils.format(date, 'MMMM YYYY', this.options.language),
+                Month_lower: date_utils.format(date, 'MMM YYYY', this.options.language),
                 Month_upper:
                     date.getFullYear() !== last_date.getFullYear()
                         ? date_utils.format(date, 'YYYY', this.options.language)
@@ -1010,6 +1006,7 @@ export default class Scheduler {
             upper_y: base_pos.upper_y,
             lower_x: base_pos.x + x_pos[`${this.options.view_mode}_lower`],
             lower_y: base_pos.lower_y,
+            hour_pointer,
         };
     }
 
