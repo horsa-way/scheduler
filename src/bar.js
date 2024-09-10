@@ -28,22 +28,26 @@ export default class Bar {
         this.x = this.compute_x();
         this.y = this.compute_y();
         this.corner_radius = this.scheduler.options.bar_corner_radius;
+        const duration_in_minutes = date_utils.diff(task_end, this.task._start, 'minute');
         if (this.scheduler.view_is('Hour')) {
             this.duration =
-                date_utils.diff(task_end, this.task._start, 'minute') /
+                duration_in_minutes /
                 this.scheduler.options.step;
-        } else
+        } else {
             this.duration =
                 date_utils.diff(task_end, this.task._start, 'hour') /
                 this.scheduler.options.step;
-        if (date_utils.diff(task_end, this.task._start, 'hour') < 1) {
-            this.duration = 0.05;
-            this.task.progress = 0;
-            this.task.resize_left = false;
-            this.task.resize_right = false;
-            this.width = 38 * this.duration;
-        } else
-            this.width = this.scheduler.options.column_width * this.duration;
+            if (duration_in_minutes < 60) {
+                if (this.scheduler.view_is('Day') ||
+                    this.scheduler.view_is('Half Day') ||
+                    this.scheduler.view_is('Quarter Day'))
+                    this.duration = 0.1;
+                else
+                    this.duration = 0.03;
+
+            }
+        }
+        this.width = this.scheduler.options.column_width * this.duration;
         this.progress_width =
             this.scheduler.options.column_width *
             this.duration *
@@ -283,13 +287,13 @@ export default class Bar {
         if (calc_start) {
             changed = true;
             this.task._start = new_start_date;
-            this.task.start = new_start_date;
+            this.task.start = date_utils.to_local(new_start_date);
         }
 
         if (calc_end) {
             changed = true;
             this.task._end = new_end_date;
-            this.task.end = new_end_date;
+            this.task.end = date_utils.to_local(new_end_date);
         }
 
         const new_index = this.compute_index();

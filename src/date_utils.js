@@ -81,6 +81,7 @@ export default {
         const month_name_capitalized = dateParts.month.charAt(0).toUpperCase() + dateParts.month.slice(1);
         const format_map = {
             YYYY: dateParts.year,
+            YYY: dateParts.year.substring(2,4),
             MM: dateParts.month.padStart(2, '0'),
             DD: dateParts.day.padStart(2, '0'),
             HH: dateParts.hour.padStart(2, '0'),
@@ -88,9 +89,10 @@ export default {
             ss: dateParts.second.padStart(2, '0'),
             SSS: dateParts.fractionalSecond.padStart(3, '0'),
             D: dateParts.day.padStart(2, '0'),
-            MMMM: month_name_capitalized,
             MMM: month_name_capitalized,
+            MM: month_name_capitalized.substring(0,3),
             ddd: day_name_capitalized,
+            dd: day_name_capitalized.substring(0,2)
         };
 
         let str = format_string;
