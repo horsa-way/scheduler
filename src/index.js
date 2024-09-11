@@ -519,6 +519,7 @@ export default class Scheduler {
         let pos_x = 0;
         for (let column of this.options.fixed_columns) {
             const max_width = column.width;
+            if (max_width === 0) continue;
             let text_content = column.header;
             const text_width = text_content.length * 7;
 
@@ -565,6 +566,7 @@ export default class Scheduler {
             let pos_x = 0;
             let c = 0;
             for (let column of this.options.fixed_columns) {
+                if (column.width === 0) continue;
                 const cell_wrapper = createSVG('g', {
                     class: 'cell-wrapper',
                     'data-row-id': row.id,
