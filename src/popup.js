@@ -68,18 +68,18 @@ export default class Popup {
         if (options.e.clientY + this.parent.clientHeight + 20 > container.offsetHeight + container.offsetTop) {
             this.parent.style.left = (options.e.clientX - middle_popup) + 'px';
             if (options.target_element.localName === 'text')
-                this.parent.style.top = (parseInt(options.e.toElement.getAttribute('y')) + container.offsetTop - scroll - this.parent.offsetHeight - 20) + 'px';
+                this.parent.style.top = (parseInt(options.target_element.getAttribute('y')) + container.offsetTop - scroll - this.parent.offsetHeight - 20) + 'px';
             else
-                this.parent.style.top = (parseInt(options.e.toElement.getAttribute('y')) + container.offsetTop - scroll - this.parent.offsetHeight - 10) + 'px';
+                this.parent.style.top = (parseInt(options.target_element.getAttribute('y')) + container.offsetTop - scroll - this.parent.offsetHeight - 10) + 'px';
             this.pointer.style.transform = 'rotateZ(0deg)';
             this.pointer.style.left = middle_popup + 'px';
             this.pointer.style.top = (this.parent.offsetHeight + 0.5) + 'px';
         } else {
             this.parent.style.left = (options.e.clientX - middle_popup) + 'px';
             if (options.target_element.localName === 'text')
-                this.parent.style.top = (parseInt(options.e.toElement.getAttribute('y')) + container.offsetTop + 15 - scroll) + 'px';
+                this.parent.style.top = (parseInt(options.target_element.getAttribute('y')) + container.offsetTop + 15 - scroll) + 'px';
             else
-                this.parent.style.top = (parseInt(options.e.toElement.getAttribute('y')) + container.offsetTop + 30 - scroll) + 'px';
+                this.parent.style.top = (parseInt(options.target_element.getAttribute('y')) + container.offsetTop + 30 - scroll) + 'px';
             this.pointer.style.transform = 'rotateZ(180deg)';
             this.pointer.style.left = middle_popup + 'px';
             this.pointer.style.top = '-10px';
