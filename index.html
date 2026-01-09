@@ -7,7 +7,7 @@
     <title>Simple Scheduler</title>
     <style>
         body {
-            font-family: sans-serif;
+            /* font-family: "Segoe UI","Segoe WP", Segoe, device-segoe, Tahoma, Helvetica, Arial, sans-serif; */
             background: #ccc;
         }
 
@@ -109,8 +109,10 @@
 
             <label>Cambia visualizzazione</label>
             <select name="view" id="view-select" onchange="view_change_event()">
-                <option value="Day">Giorno</option>
                 <option value="Hour">Ore</option>
+                <option value="Quarter Day">Quarter</option>
+                <option value="Half Day">Half</option>
+                <option value="Day">Giorno</option>
                 <option value="Week">Settimana</option>
                 <option value="Month">Mese</option>
                 <option value="Year">Anno</option>
@@ -122,41 +124,42 @@
     <script>
         var tasks = [
             {
-                start: "2018-10-01",
-                end: "2018-10-08",
+                start: "2024-09-05T22:00:00.000Z",
+                end: "2024-09-06T00:00:00.000Z",
                 name: "Task 0",
                 id: "Task 0",
                 description: 'PROVAsajdjk sajkdjksdjlajdnjcs jasnòvòajsdjnvjan',
-                progress: 20,
+                progress: 0,
                 row: "machine_1"
             },
             {
-                start: "2018-10-02",
-                end: "2018-10-09",
+                start: "2024-03-30T00:00:00.000Z",
+                end: "2024-07-31T22:15:11.000Z",
                 name: "Task 1",
                 id: "Task 1",
-                progress: 30,
-                row: "machine_2"
+                progress: 0,
+                row: "machine_1"
             },
             {
-                start: "2018-10-03",
-                end: "2018-10-10",
+                start: "2024-03-25T20:00:00.000Z",
+                end: "2025-03-28T22:00:00.000Z",
                 name: "Task 2",
                 id: "Task 2",
-                progress: 40,
+                progress: 0,
                 row: "machine_3"
             },
             {
-                start: "2018-10-04",
-                end: "2018-10-11",
+                start: "2024-09-16T06:00:00.000Z",
+                end: "2024-09-16T16:00:00.000Z",
                 name: "Task 3",
                 id: "Task 3",
-                progress: 50,
+                progress: 0,
                 row: "machine_4"
             },
             {
                 start: "2018-10-05",
                 end: "2018-10-12",
+                // end: "2023-10-16",
                 name: "Task 4",
                 id: "Task 4",
                 progress: 60,
@@ -1078,8 +1081,8 @@
             "machine_50"
         ]
         var scheduler_chart = new Scheduler(".scheduler-target", tasks, cells, {
-            on_task_dblclick: task => {
-                console.log(task);
+            on_task_dblclick: task_id => {
+                console.log(task_id);
             },
             on_grid_dblclick: (row_id, datetime) => {
                 console.log(row_id, datetime);
@@ -1096,17 +1099,22 @@
             on_view_change: (mode) => {
                 console.log(mode);
             },
-            view_mode: 'Day',
-            language: 'en',
+            on_row_select: (row_id) => {
+                console.log(row_id);
+            },
+            view_mode: 'Half Day',
+            language: 'it',
             resize_left: true,
             resize_right: true,
             drag_drop_x: true,
             drag_drop_y: true,
             overlap: false,
-            moving_scroll_bar: true,
-            date_start: '2018-09-15',
+            moving_scroll_bar: false,
+            date_start: '2025-09-25T22:00:00.000Z',
+            date_end: '2026-02-25T23:00:00.000Z',
             rows,
-            fixed_columns: [{ id: 'C1', header: 'name', width: 80 }, { id: 'C2', header: 'description', width: 120 }]
+            fixed_columns: [{ id: 'C1', header: 'name', width: 100 }, { id: 'C2', header: 'description', width: 0 }
+            , { id: 'C3', header: 'prova', width: 0 }, { id: 'C4', header: 'prova', width: 100 }]
         });
         console.log(scheduler_chart);
 

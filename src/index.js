@@ -1069,10 +1069,17 @@ export default class Scheduler {
             'hour'
         );
 
-        const scroll_pos =
-            (hours_before_today / this.options.step) *
-            this.options.column_width -
-            this.options.column_width;
+        let scroll_pos;
+        if (this.view_is('Hour'))
+            scroll_pos =
+                hours_before_today *
+                this.options.column_width -
+                this.options.column_width;
+        else
+            scroll_pos =
+                (hours_before_today / this.options.step) *
+                this.options.column_width -
+                this.options.column_width;
 
         parent_element.scrollLeft = scroll_pos;
     }
