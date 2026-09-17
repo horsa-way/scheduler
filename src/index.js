@@ -812,6 +812,7 @@ export default class Scheduler {
 
     make_dates() {
         let last_date_info = null;
+        let pos_x = 0;
 
         this.dates.map((date) => {
             const d = this.get_date_info(date, last_date_info);
@@ -821,6 +822,19 @@ export default class Scheduler {
                 y: d.lower_y,
                 innerHTML: d.lower_text,
                 class: 'lower-text bold',
+                append_to: this.layers.date,
+            });
+
+            if (this.view_is(VIEW_MODE.MONTH)) {
+                pos_x += (date_utils.get_days_in_month(date) *
+                    this.options.column_width) /
+                    30;;
+            } else
+                pos_x += this.options.column_width;
+
+            createSVG('path', {
+                d: `M ${pos_x} ${30} v ${30}`,
+                class: 'tick thick',
                 append_to: this.layers.date,
             });
 
@@ -1093,7 +1107,7 @@ export default class Scheduler {
         let is_resizing = false;
         let header_tick = null;
 
-        $.on(this.$svg, 'mousedown', '.grid-header, .lower-text, .upper-text', (e) => {
+        $.on(this.$svg, 'mousedown', '.grid-header, .lower-text, .upper-text, .grid-row, .weekend-highlight, .today-highlight', (e) => {
             is_dragging = true;
             start_x = e.pageX;
             scroll_left = scroll.scrollLeft;
@@ -1325,7 +1339,6 @@ export default class Scheduler {
                 VIEW_MODE.DAY,
                 VIEW_MODE.WEEK,
                 VIEW_MODE.MONTH,
-                VIEW_MODE.YEAR,
             ];
 
             let curr_index = VIEW_MODES_ORDER.indexOf(this.options.view_mode);

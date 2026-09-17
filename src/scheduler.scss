@@ -1,8 +1,11 @@
 $bar-color: #b8c2cc !default;
 $bar-stroke: #8D99A6 !default;
+$tick-color: #010101 !default;
 $border-color: #e0e0e0 !default;
 $light-bg: #f5f5f5 !default;
+$intense-border-color: #010101 !default;
 $light-border-color: #ebeff2 !default;
+$red: #f40707 !default;
 $light-yellow: #fcf8e3 !default;
 $text-muted: #666 !default;
 $text-light: #555 !default;
@@ -40,7 +43,7 @@ $handle-color: #ddd !default;
     }
 
     .row-line {
-        stroke: $light-border-color;
+        stroke: $intense-border-color;
     }
 
     .header-tick {
@@ -54,7 +57,7 @@ $handle-color: #ddd !default;
     }
 
     .tick {
-        stroke: $border-color;
+        stroke: $tick-color;
         stroke-width: 0.2;
 
         &.thick {
@@ -63,7 +66,7 @@ $handle-color: #ddd !default;
     }
 
     .today-highlight {
-        fill: $light-yellow;
+        fill: $red;
         opacity: 0.5;
     }
 
