@@ -144,7 +144,7 @@ export default {
 
     today() {
         const vals = this.get_date_values(new Date()).slice(0, 3);
-        return new Date(...vals);
+        return new Date(Date.UTC(...vals));
     },
 
     now() {
@@ -169,6 +169,7 @@ export default {
         if (scale == 'week')
         {
             var d = this.clone(date);
+            d.setUTCHours(0, 0, 0, 0);
             var day = d.getUTCDay(), diff = d.getUTCDate() - day + (day == 0 ? -6 : 1); // adjust when day is sunday
             d.setUTCDate(diff);
             return d;
@@ -190,7 +191,7 @@ export default {
         }
 
         const vals = [
-            date.getFullYear(),
+            date.getUTCFullYear(),
             should_reset(YEAR) ? 0 : date.getUTCMonth(),
             should_reset(MONTH) ? 1 : date.getUTCDate(),
             should_reset(DAY) ? 0 : date.getUTCHours(),
@@ -221,14 +222,14 @@ export default {
     get_days_in_month(date) {
         const no_of_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-        const month = date.getMonth();
+        const month = date.getUTCMonth();
 
         if (month !== 1) {
             return no_of_days[month];
         }
 
         // Feb
-        const year = date.getFullYear();
+        const year = date.getUTCFullYear();
         if ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0) {
             return 29;
         }

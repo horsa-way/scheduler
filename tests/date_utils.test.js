@@ -113,6 +113,24 @@ test('StartOf', () => {
     );
 });
 
+test('Today: returns UTC midnight', () => {
+    const today = date_utils.today();
+
+    expect(today.getUTCHours()).toBe(0);
+    expect(today.getUTCMinutes()).toBe(0);
+    expect(today.getUTCSeconds()).toBe(0);
+    expect(today.getUTCMilliseconds()).toBe(0);
+});
+
+test('StartOf week: starts on Monday at UTC midnight', () => {
+    const date = new Date(Date.UTC(2026, 8, 17, 15, 20));
+    const startOfWeek = date_utils.start_of(date, 'week');
+
+    expect(date_utils.to_string(startOfWeek, true)).toBe(
+        '2026-09-14 00:00:00.000'
+    );
+});
+
 test('format', () => {
     const date = date_utils.parse('2017-08-12 15:07:23');
     expect(date_utils.format(date, 'YYYY-MM-DD')).toBe('2017-08-12');

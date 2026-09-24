@@ -58,16 +58,33 @@ $handle-color: #ddd !default;
 
     .tick {
         stroke: $tick-color;
-        stroke-width: 0.2;
+        stroke-width: 0.5;
 
-        &.thick {
-            stroke-width: 0.4;
+        &.subdivision {
+            stroke: $tick-color;
+            stroke-width: 0.5;
+        }
+
+        &.day-boundary {
+            stroke: $tick-color;
+            stroke-width: 0.8;
+        }
+
+        &.week-boundary,
+        &.month-boundary {
+            stroke: $tick-color;
+            stroke-width: 1;
+        }
+
+        &.year-boundary {
+            stroke: $tick-color;
+            stroke-width: 1.2;
         }
     }
 
     .today-highlight {
         fill: $red;
-        opacity: 0.5;
+        opacity: 0.22;
     }
 
     .weekend-highlight {
@@ -207,8 +224,12 @@ $handle-color: #ddd !default;
     .scheduler-columns-container {
         flex: 0 0 auto;
         scrollbar-width: none;
+        -ms-overflow-style: none;
         overflow: auto;
-        padding-bottom: 17px;
+
+        &::-webkit-scrollbar {
+            display: none;
+        }
     }
 
     .scheduler-grid-container {

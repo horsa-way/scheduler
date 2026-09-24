@@ -28,29 +28,18 @@ export default class Bar {
         this.x = this.compute_x();
         this.y = this.compute_y();
         this.corner_radius = this.scheduler.options.bar_corner_radius;
-        const duration_in_minutes = date_utils.diff(task_end, this.task._start, 'minute');
-        if (this.scheduler.view_is('Hour')) {
-            this.duration =
-                duration_in_minutes /
-                this.scheduler.options.step;
-        } else {
-            this.duration =
-                date_utils.diff(task_end, this.task._start, 'hour') /
-                this.scheduler.options.step;
-            if (duration_in_minutes < 60) {
-                if (this.scheduler.view_is('Day') ||
-                    this.scheduler.view_is('Half Day') ||
-                    this.scheduler.view_is('Quarter Day'))
-                    this.duration = 0.1;
-                else
-                    this.duration = 0.03;
+        const duration_in_ms = task_end.getTime() - this.task._start.getTime();
+        this.duration = duration_in_ms / this.scheduler.get_ms_per_column();
+        this.width = this.scheduler.duration_to_width(duration_in_ms);
 
-            }
+        if (duration_in_ms < 60 * 60 * 1000) {
+            const minimum_columns = this.scheduler.options.zoom_step <= (24 * 60) ? 0.1 : 0.03;
+            this.width = Math.max(this.width, this.scheduler.options.column_width * minimum_columns);
+            this.duration = this.width / this.scheduler.options.column_width;
         }
-        this.width = this.scheduler.options.column_width * this.duration;
+
         this.progress_width =
-            this.scheduler.options.column_width *
-            this.duration *
+            this.width *
             (this.task.progress / 100) || 0;
         this.group = createSVG('g', {
             class: 'bar-wrapper ' + (this.task.custom_class || ''),
@@ -251,7 +240,7 @@ export default class Bar {
 
     update_bar_position({ x = null, width = null, y = null }) {
         const bar = this.$bar;
-        if (x) {
+        if (x !== null) {
             // get all x values of parent task
             const xs = this.task.dependencies.map((dep) => {
                 return this.scheduler.get_bar(dep).$bar.getX();
@@ -267,11 +256,11 @@ export default class Bar {
             this.update_attr(bar, 'x', x);
             this.x = x;
         }
-        if (width && width >= this.handle_width * 2 + 3) {
+        if (width !== null && width >= this.handle_width * 2 + 3) {
             this.update_attr(bar, 'width', width);
             this.width = width;
         }
-        if (y) {
+        if (y !== null) {
             this.update_attr(bar, 'y', y);
             this.y = y;
         }
@@ -327,34 +316,13 @@ export default class Bar {
 
     compute_start_end_date() {
         const bar = this.$bar;
-        const x_in_units = bar.getX() / this.scheduler.options.column_width;
-        let new_start_date;
-        if (this.scheduler.view_is('Hour'))
-            new_start_date = date_utils.add(
-                this.scheduler.scheduler_start,
-                x_in_units * this.scheduler.options.step,
-                'minute'
-            );
-        else
-            new_start_date = date_utils.add(
-                this.scheduler.scheduler_start,
-                x_in_units * this.scheduler.options.step,
-                'hour'
-            );
-        const width_in_units = bar.getWidth() / this.scheduler.options.column_width;
-        let new_end_date;
-        if (this.scheduler.view_is('Hour'))
-            new_end_date = date_utils.add(
-                new_start_date,
-                width_in_units * this.scheduler.options.step,
-                'minute'
-            );
-        else
-            new_end_date = date_utils.add(
-                new_start_date,
-                width_in_units * this.scheduler.options.step,
-                'hour'
-            );
+        const new_start_date = this.scheduler.normalize_snapped_date(
+            this.scheduler.x_to_time(bar.getX())
+        );
+        const duration_ms = Math.round(this.scheduler.width_to_duration_ms(bar.getWidth()));
+        const new_end_date = this.scheduler.normalize_snapped_date(
+            new Date(new_start_date.getTime() + duration_ms)
+        );
 
         return { new_start_date, new_end_date };
     }
@@ -381,19 +349,8 @@ export default class Bar {
     }
 
     compute_x() {
-        const { step, column_width } = this.scheduler.options;
         const task_start = this.task._start;
-        const scheduler_start = this.scheduler.scheduler_start;
-
-        let diff;
-        if (this.scheduler.view_is('Hour'))
-            diff = date_utils.diff(task_start, scheduler_start, 'minute');
-        else
-            diff = date_utils.diff(task_start, scheduler_start, 'hour');
-
-        let x = Math.floor((diff / step) * column_width * 1000) / 1000;
-
-        return x;
+        return this.scheduler.time_to_x(task_start);
     }
 
     compute_y() {
@@ -406,39 +363,6 @@ export default class Bar {
             bar_y = ((this.scheduler.options.padding / 2) + this.scheduler.rows[this.task._index].y);
         }
         return bar_y;
-    }
-
-    get_snap_position(dx) {
-        let odx = dx,
-            rem,
-            position;
-
-        if (this.scheduler.view_is('Week')) {
-            rem = dx % (this.scheduler.options.column_width / 7);
-            position =
-                odx -
-                rem +
-                (rem < this.scheduler.options.column_width / 14
-                    ? 0
-                    : this.scheduler.options.column_width / 7);
-        } else if (this.scheduler.view_is('Month')) {
-            rem = dx % (this.scheduler.options.column_width / 30);
-            position =
-                odx -
-                rem +
-                (rem < this.scheduler.options.column_width / 60
-                    ? 0
-                    : this.scheduler.options.column_width / 30);
-        } else {
-            rem = dx % this.scheduler.options.column_width;
-            position =
-                odx -
-                rem +
-                (rem < this.scheduler.options.column_width / 2
-                    ? 0
-                    : this.scheduler.options.column_width);
-        }
-        return position;
     }
 
     update_attr(element, attr, value) {

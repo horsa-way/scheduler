@@ -3,6 +3,21 @@ import { $, createSVG } from './svg_utils';
 import Bar from './bar';
 import Arrow from './arrow';
 import Popup from './popup';
+import {
+    clamp_zoom_step,
+    get_max_zoom_step_for_width,
+    get_nearest_view_mode,
+    get_tick_step_minutes,
+    get_view_preset,
+    zoom_step_from_wheel,
+} from './time_scale';
+import {
+    get_common_fitting_level,
+    get_lower_text_candidates,
+    get_upper_grouping,
+    get_upper_text_candidates,
+    pick_fitting_label,
+} from './date_labels';
 
 import './scheduler.scss';
 
@@ -25,6 +40,9 @@ export default class Scheduler {
         this.setup_rows();
         // initialize with default view mode
         this.change_view_mode();
+        this.pending_wheel_delta = 0;
+        this.pending_wheel_event = null;
+        this.wheel_animation_frame = null;
         this.bind_events();
     }
 
@@ -122,6 +140,10 @@ export default class Scheduler {
             overlap: true,
             moving_scroll_bar: true,
             hide_fixed_columns: false,
+            zoom_min_step: 15,
+            zoom_max_step: 24 * 60 * 365,
+            zoom_interactive_max_step: 30 * 24 * 60,
+            time_axis_overscan: 600,
         };
         this.options = Object.assign({}, default_options, options);
 
@@ -278,45 +300,123 @@ export default class Scheduler {
     }
 
     change_view_mode(mode = this.options.view_mode) {
+        this.is_zooming = false;
         this.update_view_scale(mode);
         this.setup_dates();
         this.render();
         // fire viewmode_change event
-        this.trigger_event('view_change', [mode]);
+        this.trigger_event('view_change', [this.options.view_mode]);
     }
 
     update_view_scale(view_mode) {
         this.options.view_mode = view_mode;
-        switch (this.options.view_mode) {
-            case VIEW_MODE.HOUR:
-                this.options.step = 60;
-                this.options.column_width = 60;
-                break;
-            case VIEW_MODE.QUARTER_DAY:
-                this.options.step = 24 / 4;
-                this.options.column_width = 24 * 2;
-                break;
-            case VIEW_MODE.HALF_DAY:
-                this.options.step = 24 / 2;
-                this.options.column_width = 24 * 2;
-                break;
-            case VIEW_MODE.DAY:
-                this.options.step = 24;
-                this.options.column_width = 24 * 2;
-                break;
-            case VIEW_MODE.WEEK:
-                this.options.step = 24 * 7;
-                this.options.column_width = this.options.step;
-                break;
-            case VIEW_MODE.MONTH:
-                this.options.step = 24 * 30;
-                this.options.column_width = 150;
-                break;
-            case VIEW_MODE.YEAR:
-                this.options.step = 24 * 365;
-                this.options.column_width = 120;
-                break;
+        const preset = get_view_preset(this.options.view_mode);
+        this.options.zoom_step = preset.step_minutes;
+        this.options.column_width = preset.column_width;
+        this.options.step = this.options.zoom_step / 60;
+        this.calendar_tick_unit = preset.calendar_unit;
+    }
+
+    get_ms_per_column() {
+        return this.options.zoom_step * 60 * 1000;
+    }
+
+    time_to_x(date) {
+        return ((date.getTime() - this.scheduler_start.getTime()) / this.get_ms_per_column()) * this.options.column_width;
+    }
+
+    x_to_time(x) {
+        return new Date(this.scheduler_start.getTime() + ((x / this.options.column_width) * this.get_ms_per_column()));
+    }
+
+    duration_to_width(duration_ms) {
+        return (duration_ms / this.get_ms_per_column()) * this.options.column_width;
+    }
+
+    width_to_duration_ms(width) {
+        return (width / this.options.column_width) * this.get_ms_per_column();
+    }
+
+    get_tick_info() {
+        if (this.calendar_tick_unit) {
+            return { unit: this.calendar_tick_unit, value: 1 };
         }
+
+        const tick_minutes = get_tick_step_minutes(this.options.zoom_step, this.options.column_width);
+
+        if (tick_minutes >= 262800) {
+            return { unit: 'year', value: 1 };
+        }
+
+        if (tick_minutes >= 43200) {
+            return { unit: 'month', value: 1 };
+        }
+
+        return { unit: 'minute', value: tick_minutes };
+    }
+
+    floor_to_tick(date, tick_info) {
+        if (tick_info.unit === 'year') {
+            return date_utils.start_of(date, 'year');
+        }
+
+        if (tick_info.unit === 'month') {
+            return date_utils.start_of(date, 'month');
+        }
+
+        if (tick_info.unit === 'week') {
+            return date_utils.start_of(date, 'week');
+        }
+
+        const tick_ms = tick_info.value * 60 * 1000;
+        const date_ms = date.getTime();
+        const floored = Math.floor(date_ms / tick_ms) * tick_ms;
+        return new Date(floored);
+    }
+
+    add_tick(date, tick_info) {
+        if (tick_info.unit === 'year') {
+            return date_utils.add(date, 1, 'year');
+        }
+
+        if (tick_info.unit === 'month') {
+            return date_utils.add(date, 1, 'month');
+        }
+
+        if (tick_info.unit === 'week') {
+            return date_utils.add(date, 7, 'day');
+        }
+
+        return new Date(date.getTime() + tick_info.value * 60 * 1000);
+    }
+
+    get_grid_width() {
+        if (!this.grid_end) {
+            return this.options.column_width;
+        }
+
+        return Math.max(this.time_to_x(this.grid_end), this.options.column_width);
+    }
+
+    get_interactive_max_zoom_step() {
+        const fallback_max = this.options.zoom_interactive_max_step;
+        const viewport_width = (this.$container && this.$container.clientWidth)
+            ? this.$container.clientWidth + 1
+            : 0;
+
+        if (!this.scheduler_start || !this.grid_end || viewport_width <= 0) {
+            return fallback_max;
+        }
+
+        const range_minutes = (this.grid_end.getTime() - this.scheduler_start.getTime()) / (60 * 1000);
+        const derived_max = get_max_zoom_step_for_width(
+            range_minutes,
+            this.options.column_width,
+            viewport_width,
+            fallback_max
+        );
+
+        return clamp_zoom_step(derived_max, this.options.zoom_min_step, fallback_max);
     }
 
     setup_dates() {
@@ -374,32 +474,29 @@ export default class Scheduler {
                 this.scheduler_end = date_utils.add(this.scheduler_end, 1, 'month');
             }
         }
+
+        if (this.view_is(VIEW_MODE.WEEK)) {
+            this.scheduler_start = date_utils.start_of(this.scheduler_start, 'week');
+        } else if (this.view_is(VIEW_MODE.MONTH)) {
+            this.scheduler_start = date_utils.start_of(this.scheduler_start, 'month');
+        }
     }
 
     setup_date_values() {
+        this.tick_info = this.get_tick_info();
         this.dates = [];
-        let cur_date = date_utils.clone(this.scheduler_start);
+        let cur_date = this.floor_to_tick(this.scheduler_start, this.tick_info);
+
+        if (cur_date < this.scheduler_start) {
+            cur_date = this.add_tick(cur_date, this.tick_info);
+        }
 
         while (cur_date <= this.scheduler_end) {
             this.dates.push(cur_date);
-            switch (this.options.view_mode) {
-                case VIEW_MODE.YEAR:
-                    cur_date = date_utils.add(cur_date, 1, 'year');
-                    break;
-                case VIEW_MODE.MONTH:
-                    cur_date = date_utils.add(cur_date, 1, 'month');
-                    break;
-                case VIEW_MODE.WEEK:
-                    cur_date = date_utils.add(cur_date, 7, 'day');
-                    break;
-                case VIEW_MODE.HOUR:
-                    cur_date = date_utils.add(cur_date, 1, 'hour');
-                    break;
-                default:
-                    cur_date = date_utils.add(cur_date, this.options.step, 'hour');
-                    break;
-            }
+            cur_date = this.add_tick(cur_date, this.tick_info);
         }
+
+        this.grid_end = cur_date;
     }
 
     bind_events() {
@@ -413,12 +510,12 @@ export default class Scheduler {
         this.setup_layers();
         this.make_fixed_columns();
         this.make_grid();
-        this.make_dates();
         this.make_bars();
         this.make_arrows();
         this.map_arrows_on_bars();
         this.set_width();
-        this.set_scroll_position();
+        if (!this.is_zooming)
+            this.set_scroll_position();
         if (!this.options.overlap)
             this.red_border();
     }
@@ -628,16 +725,87 @@ export default class Scheduler {
         this.make_grid_background();
         this.make_grid_rows();
         this.make_grid_header();
+        this.grid_ticks_group = createSVG('g', {
+            class: 'grid-ticks',
+            append_to: this.layers.grid,
+        });
+        this.grid_highlights_group = createSVG('g', {
+            class: 'grid-highlights',
+            append_to: this.layers.grid,
+        });
+        this.date_values_group = createSVG('g', {
+            class: 'date-values',
+            append_to: this.layers.date,
+        });
+
+        this.render_time_axis_viewport();
+    }
+
+    get_viewport_x_bounds() {
+        const viewport_width = this.$container?.clientWidth || this.get_grid_width();
+        const scroll_left = this.$container?.scrollLeft || 0;
+        const overscan = this.options.time_axis_overscan;
+
+        return {
+            start: Math.max(0, scroll_left - overscan),
+            end: scroll_left + viewport_width + overscan,
+        };
+    }
+
+    get_visible_dates() {
+        if (!this.dates.length) {
+            return [];
+        }
+
+        const bounds = this.get_viewport_x_bounds();
+        let start_index = this.dates.findIndex((date) => this.time_to_x(date) >= bounds.start);
+
+        if (start_index === -1) {
+            start_index = this.dates.length - 1;
+        }
+
+        start_index = Math.max(0, start_index - 1);
+
+        let end_index = start_index;
+        while (
+            end_index < this.dates.length &&
+            this.time_to_x(this.dates[end_index]) <= bounds.end
+        ) {
+            end_index++;
+        }
+
+        end_index = Math.min(this.dates.length - 1, end_index + 1);
+
+        return this.dates.slice(start_index, end_index + 1);
+    }
+
+    render_time_axis_viewport() {
+        if (!this.grid_ticks_group || !this.grid_highlights_group || !this.date_values_group) {
+            return;
+        }
+
+        this.grid_ticks_group.innerHTML = '';
+        this.grid_highlights_group.innerHTML = '';
+        this.date_values_group.innerHTML = '';
+
         this.make_grid_ticks();
         this.make_grid_highlights();
+        this.make_dates();
+    }
+
+    request_time_axis_render() {
+        if (this.time_axis_animation_frame) {
+            return;
+        }
+
+        this.time_axis_animation_frame = requestAnimationFrame(() => {
+            this.render_time_axis_viewport();
+            this.time_axis_animation_frame = null;
+        });
     }
 
     make_grid_background() {
-        let grid_width;
-        if (this.view_is(VIEW_MODE.WEEK) || this.view_is(VIEW_MODE.MONTH) || this.view_is(VIEW_MODE.YEAR)) {
-            grid_width = (this.dates.length - 1) * this.options.column_width;
-        } else
-            grid_width = this.dates.length * this.options.column_width;
+        const grid_width = this.get_grid_width();
         const sum_rows_height = this.rows[this.rows.length - 1].y + this.rows[this.rows.length - 1].height;
         const grid_height = sum_rows_height;
 
@@ -660,7 +828,7 @@ export default class Scheduler {
         const rows_layer = createSVG('g', { append_to: this.layers.grid });
         const lines_layer = createSVG('g', { append_to: this.layers.grid });
 
-        const row_width = this.dates.length * this.options.column_width;
+        const row_width = this.get_grid_width();
 
         let i = 0;
 
@@ -696,7 +864,7 @@ export default class Scheduler {
     }
 
     make_grid_header() {
-        const header_width = this.dates.length * this.options.column_width;
+        const header_width = this.get_grid_width();
         const header_height = this.options.header_height + 10;
         createSVG('rect', {
             x: 0,
@@ -710,91 +878,52 @@ export default class Scheduler {
 
     make_grid_ticks() {
         const sum_rows_height = this.rows[this.rows.length - 1].y + this.rows[this.rows.length - 1].height;
-        let tick_x = 0;
-        let tick_y = 0;
-        let tick_height = sum_rows_height;
+        const tick_y = this.options.header_height + (this.options.padding / 2);
+        const tick_height = sum_rows_height - tick_y;
+        const visible_dates = this.get_visible_dates();
 
-        for (let date of this.dates) {
-            let tick_class = 'tick';
-            // thick tick for monday
-            if (this.view_is(VIEW_MODE.DAY) && date.getDate() === 1) {
-                tick_class += ' thick';
-            }
-            // thick tick for first week
-            if (
-                this.view_is(VIEW_MODE.WEEK) &&
-                date.getDate() >= 1 &&
-                date.getDate() < 8
-            ) {
-                tick_class += ' thick';
-            }
-            // thick ticks for quarters
-            if (this.view_is(VIEW_MODE.MONTH) && date.getMonth() % 3 === 0) {
-                tick_class += ' thick';
-            }
+        for (let date of visible_dates) {
+            const tick_x = this.time_to_x(date);
 
             createSVG('path', {
                 d: `M ${tick_x} ${tick_y} v ${tick_height}`,
-                class: tick_class,
-                append_to: this.layers.grid,
+                class: this.get_tick_class(date),
+                append_to: this.grid_ticks_group,
             });
-
-            if (this.view_is(VIEW_MODE.MONTH)) {
-                tick_x +=
-                    (date_utils.get_days_in_month(date) *
-                        this.options.column_width) /
-                    30;
-            } else {
-                tick_x += this.options.column_width;
-            }
         }
     }
 
-    make_grid_highlights() {
-        const today = date_utils.today();
-        let x = Math.round(date_utils.diff(today, this.dates[0], 'hour') /
-            this.options.step) * this.options.column_width;
-        let width = this.options.column_width;
+    get_tick_class(date) {
+        if (this.tick_info.unit === 'year' ||
+            (this.tick_info.unit === 'month' && date.getUTCMonth() === 0)) {
+            return 'tick year-boundary';
+        }
 
-        switch (this.options.view_mode) {
-            case VIEW_MODE.HOUR:
-                x = date_utils.diff(today, this.dates[0], 'minute') /
-                    this.options.step * this.options.column_width;
-                if (today.getTimezoneOffset() === -60)
-                    x += this.options.column_width;
-                else
-                    x += (this.options.column_width * 2);
-                width *= 24;
-                break;
-            case VIEW_MODE.HALF_DAY:
-                width *= 2;
-                break;
-            case VIEW_MODE.QUARTER_DAY:
-                width *= 4;
-                break;
-            case VIEW_MODE.WEEK:
-                const day_of_week = today.getDay(); // 0 = Domenica, 1 = Lunedì, ..., 6 = Sabato
-                const start_of_week = new Date(today);
-                start_of_week.setDate(today.getDate() - (day_of_week === 0 ? 6 : day_of_week - 1)); // Sposta indietro al lunedì
-                x = Math.round(date_utils.diff(start_of_week, this.dates[0], 'hour') /
-                    this.options.step) * this.options.column_width;
-                break;
-            case VIEW_MODE.MONTH:
-                const start_of_month = date_utils.start_of(today, 'month');
-                x = date_utils.diff(start_of_month, this.dates[0], 'hour') /
-                    this.options.step * this.options.column_width;
-                width = (date_utils.get_days_in_month(today) *
-                    this.options.column_width) /
-                    30;
-                break;
-            case VIEW_MODE.YEAR:
-                const start_of_year = date_utils.start_of(today, 'year');
-                const starting_year = date_utils.start_of(this.scheduler_start, 'year');
-                x = date_utils.diff(start_of_year, starting_year, 'hour') /
-                    this.options.step * this.options.column_width;
-                break;
-            default:
-                break;
+        if (this.tick_info.unit === 'month' || date.getUTCDate() === 1) {
+            return 'tick month-boundary';
+        }
+
+        if (this.tick_info.unit === 'week') {
+            return 'tick week-boundary';
+        }
+
+        if (date.getUTCHours() === 0 && date.getUTCMinutes() === 0) {
+            return 'tick day-boundary';
+        }
+
+        return 'tick subdivision';
+    }
+
+    make_grid_highlights() {
+        const bounds = this.get_viewport_x_bounds();
+        const today = date_utils.today();
+        const start_of_today = date_utils.start_of(today, 'day');
+        const tomorrow = date_utils.add(start_of_today, 1, 'day');
+        const x = this.time_to_x(start_of_today);
+        const width = this.duration_to_width(tomorrow.getTime() - start_of_today.getTime());
+
+        if ((x + width) < bounds.start || x > bounds.end) {
+            return;
         }
 
         const y = this.options.header_height + this.options.padding / 2;
@@ -806,61 +935,43 @@ export default class Scheduler {
             width,
             height,
             class: 'today-highlight',
-            append_to: this.layers.grid,
+            append_to: this.grid_highlights_group,
         });
     }
 
     make_dates() {
-        let last_date_info = null;
-        let pos_x = 0;
+        const visible_dates = this.get_visible_dates();
+        const date_infos = visible_dates.map((date) => this.get_date_info(date));
+        const common_lower_level = this.get_common_lower_text_level(date_infos);
 
-        this.dates.map((date) => {
-            const d = this.get_date_info(date, last_date_info);
-            last_date_info = d;
-            createSVG('text', {
+        date_infos.map((d) => {
+            const lower_text_element = createSVG('text', {
                 x: d.lower_x,
                 y: d.lower_y,
                 innerHTML: d.lower_text,
                 class: 'lower-text bold',
-                append_to: this.layers.date,
+                append_to: this.date_values_group,
             });
+            lower_text_element.textContent = this.get_lower_text_at_level(d, common_lower_level);
 
-            if (this.view_is(VIEW_MODE.MONTH)) {
-                pos_x += (date_utils.get_days_in_month(date) *
-                    this.options.column_width) /
-                    30;;
-            } else
-                pos_x += this.options.column_width;
+            const pos_x = this.time_to_x(d.next_date);
 
             createSVG('path', {
-                d: `M ${pos_x} ${30} v ${30}`,
-                class: 'tick thick',
-                append_to: this.layers.date,
+                d: `M ${pos_x} ${30} V ${this.options.header_height + (this.options.padding / 2)}`,
+                class: this.get_tick_class(d.next_date),
+                append_to: this.date_values_group,
             });
 
-            if ((d.date.getDay() === 6 || d.date.getDay() === 0) &&
-                (this.options.view_mode === VIEW_MODE.DAY ||
-                    this.options.view_mode === VIEW_MODE.HALF_DAY ||
-                    this.options.view_mode === VIEW_MODE.QUARTER_DAY ||
-                    this.options.view_mode === VIEW_MODE.HOUR)) {
+            if ((d.date.getUTCDay() === 6 || d.date.getUTCDay() === 0) &&
+                this.tick_info.unit === 'minute' && this.tick_info.value < 24 * 60) {
 
-                let highlight_x;
                 const highlight_y = d.lower_y + (this.options.padding / 2);
-                let highlight_width = this.options.column_width;
+                const highlight_x = d.base_pos_x;
+                const highlight_width = d.column_width;
                 const highlight_height = this.rows[this.rows.length - 1].y +
                     this.rows[this.rows.length - 1].height -
                     this.options.header_height -
                     (this.options.padding / 2);
-
-                if (this.view_is(VIEW_MODE.DAY))
-                    highlight_x = d.lower_x - (this.options.column_width / 2);
-                else if (this.view_is(VIEW_MODE.HOUR))
-                    if (d.date.getTimezoneOffset() === -60)
-                        highlight_x = d.lower_x + this.options.column_width;
-                    else
-                        highlight_x = d.lower_x + (this.options.column_width * 2);
-                else
-                    highlight_x = d.lower_x;
 
                 createSVG('rect', {
                     x: highlight_x,
@@ -868,161 +979,180 @@ export default class Scheduler {
                     width: highlight_width,
                     height: highlight_height,
                     class: 'weekend-highlight',
-                    append_to: this.layers.grid,
-                });
-            }
-            if (d.upper_text) {
-                createSVG('text', {
-                    x: d.upper_x,
-                    y: d.upper_y,
-                    innerHTML: d.upper_text,
-                    class: 'upper-text bold',
-                    append_to: this.layers.date,
+                    append_to: this.grid_highlights_group,
                 });
             }
             return d;
         });
+
+        this.make_upper_period_labels();
     }
 
-    get_date_info(date, last_date_info) {
-        let column_width = this.options.column_width;
-        let x_pos;
-        let hour_pointer;
-        let date_text;
-        const hour = [
-            '00', '01', '02', '03', '04', '05', '06', '07', '08', '09',
-            '10', '11', '12', '13', '14', '15', '16', '17', '18', '19',
-            '20', '21', '22', '23'
-        ];
-        let last_date = null;
-        if (last_date_info) {
-            last_date = last_date_info.date;
-        } else {
-            last_date = date_utils.add(date, 1, 'year');
-            last_date = date_utils.add(last_date, 1, 'month');
-            last_date = date_utils.add(last_date, 1, 'day');
+    get_common_lower_text_level(date_infos) {
+        if (!date_infos.length) {
+            return 0;
         }
-        if (this.view_is(VIEW_MODE.DAY)) {
-            date_text = {
-                Day_lower:
-                    date.getDate() !== last_date.getDate()
-                        ? date_utils.format(date, 'D dd', this.options.language)
-                        : '',
-                Day_upper:
-                    date.getMonth() !== last_date.getMonth()
-                        ? date_utils.format(date, 'MMM YYYY', this.options.language)
-                        : '',
-            };
-            x_pos = {
-                Day_lower: column_width / 2,
-                Day_upper: (column_width * 30) / 2
-            };
-        } else if (this.view_is(VIEW_MODE.HOUR)) {
-            hour_pointer = last_date_info?.hour_pointer || 0;
-            date_text = {
-                Hour_lower: hour[hour_pointer],
-                Hour_upper:
-                    hour_pointer === 0
-                        ? date_utils.format(date, 'ddd D MMM YYYY', this.options.language)
-                        : '',
-            };
-            hour_pointer = (hour_pointer < 23) ? hour_pointer + 1 : 0;
-            x_pos = {
-                Hour_lower: 0,
-                Hour_upper: column_width * 24 / 2
-            };
-        } else if (this.view_is(VIEW_MODE.WEEK)) {
-            date_text = {
-                Week_lower:
-                    date.getMonth() !== last_date.getMonth()
-                        ? date_utils.format(date, 'D MMM', this.options.language)
-                        : date_utils.format(date, 'D', this.options.language),
-                Week_upper:
-                    date.getMonth() !== last_date.getMonth()
-                        ? date_utils.format(date, 'MMM YYYY', this.options.language)
-                        : '',
-            };
-            x_pos = {
-                Week_lower: 0,
-                Week_upper: (column_width * 4) / 2
-            };
-        } else if (this.view_is(VIEW_MODE.QUARTER_DAY)) {
-            hour_pointer = last_date_info?.hour_pointer || 0;
-            date_text = {
-                'Quarter Day_lower': hour[hour_pointer],
-                'Quarter Day_upper':
-                    hour_pointer === 0
-                        ? date_utils.format(date, 'ddd D MMM YYYY', this.options.language)
-                        : '',
-            };
-            hour_pointer = (hour_pointer < 18) ? hour_pointer + 6 : 0;
-            x_pos = {
-                'Quarter Day_lower': 0,
-                'Quarter Day_upper': column_width + (column_width / 2)
-            };
-        } else if (this.view_is(VIEW_MODE.HALF_DAY)) {
-            hour_pointer = last_date_info?.hour_pointer || 0;
-            date_text = {
-                'Half Day_lower': hour[hour_pointer],
-                'Half Day_upper':
-                    hour_pointer === 0
-                        ? date.getMonth() !== last_date.getMonth()
-                            ? date_utils.format(date, 'D dd MMM', this.options.language)
-                            : date_utils.format(date, 'D dd MM YYY', this.options.language)
-                        : '',
-            };
-            hour_pointer = (hour_pointer < 12) ? hour_pointer + 12 : 0;
-            x_pos = {
-                'Half Day_lower': 0,
-                'Half Day_upper': column_width
-            };
-        } else if (this.view_is(VIEW_MODE.MONTH)) {
-            date_text = {
-                Month_lower: date_utils.format(date, 'MMM YYYY', this.options.language),
-                Month_upper:
-                    date.getFullYear() !== last_date.getFullYear()
-                        ? date_utils.format(date, 'YYYY', this.options.language)
-                        : '',
-            };
-            column_width =
-                (date_utils.get_days_in_month(date) * column_width) / 30;
-            x_pos = {
-                Month_lower: column_width / 2,
-                Month_upper: (column_width * 12) / 2
-            };
-        } else if (this.view_is(VIEW_MODE.YEAR)) {
-            date_text = {
-                Year_lower: date_utils.format(date, 'YYYY', this.options.language),
-                Year_upper:
-                    date.getFullYear() !== last_date.getFullYear()
-                        ? date_utils.format(date, 'YYYY', this.options.language)
-                        : '',
-            };
-            x_pos = {
-                Year_lower: column_width / 2,
-                Year_upper: (column_width * 30) / 2
-            };
-        };
 
-        const base_pos = {
-            x: last_date_info
-                ? last_date_info.base_pos_x + last_date_info.column_width
-                : 0,
-            lower_y: this.options.header_height,
-            upper_y: this.options.header_height - 25,
-        };
+        const measure_element = createSVG('text', {
+            x: 0,
+            y: 0,
+            innerHTML: '',
+            class: 'lower-text bold',
+            append_to: this.date_values_group,
+        });
+
+        const candidate_matrix = date_infos.map((date_info) => {
+            return date_info.lower_text_candidates && date_info.lower_text_candidates.length
+                ? date_info.lower_text_candidates
+                : [date_info.lower_text];
+        });
+
+        const available_widths = date_infos.map((date_info) => {
+            return Math.max(date_info.column_width - 8, 1);
+        });
+
+        const level = get_common_fitting_level(candidate_matrix, available_widths, (label) => {
+            const measured = this.measure_svg_text_width(measure_element, label);
+            return measured != null ? measured : label.length * 7;
+        });
+
+        measure_element.remove();
+        return level;
+    }
+
+    get_lower_text_at_level(date_info, level) {
+        const candidates = date_info.lower_text_candidates && date_info.lower_text_candidates.length
+            ? date_info.lower_text_candidates
+            : [date_info.lower_text];
+
+        const candidate_index = Math.min(level, candidates.length - 1);
+        return candidates[candidate_index] || date_info.lower_text;
+    }
+
+    get_fitted_lower_text(date_info, lower_text_element) {
+        const horizontal_padding = 8;
+        const available_width = Math.max(date_info.column_width - horizontal_padding, 1);
+        const candidates = date_info.lower_text_candidates && date_info.lower_text_candidates.length
+            ? date_info.lower_text_candidates
+            : [date_info.lower_text];
+
+        return pick_fitting_label(candidates, available_width, (label) => {
+            const measured = this.measure_svg_text_width(lower_text_element, label);
+            return measured != null ? measured : label.length * 7;
+        });
+    }
+
+    measure_svg_text_width(text_element, text) {
+        if (!text_element) {
+            return null;
+        }
+
+        text_element.textContent = text;
+
+        if (typeof text_element.getComputedTextLength !== 'function') {
+            return null;
+        }
+
+        const width = text_element.getComputedTextLength();
+        return Number.isFinite(width) && width > 0 ? width : null;
+    }
+
+    get_period_end(start_date, period_unit) {
+        if (period_unit === 'day') {
+            return date_utils.add(start_date, 1, 'day');
+        }
+
+        if (period_unit === 'month') {
+            return date_utils.add(start_date, 1, 'month');
+        }
+
+        if (period_unit === 'year') {
+            return date_utils.add(start_date, 1, 'year');
+        }
+
+        return date_utils.add(start_date, 1, 'day');
+    }
+
+    make_upper_period_labels() {
+        const grouping = get_upper_grouping(this.tick_info);
+        if (!grouping) {
+            return;
+        }
+
+        const bounds = this.get_viewport_x_bounds();
+        const viewport_start_date = this.x_to_time(bounds.start);
+        const viewport_end_date = this.x_to_time(bounds.end);
+        let current_start = date_utils.start_of(viewport_start_date, grouping.unit);
+
+        let last_text_end = Number.NEGATIVE_INFINITY;
+        while (current_start <= viewport_end_date) {
+            const current_end = this.get_period_end(current_start, grouping.unit);
+            const period_start_x = this.time_to_x(current_start);
+            const period_end_x = this.time_to_x(current_end);
+
+            const visible_start_x = Math.max(period_start_x, bounds.start);
+            const visible_end_x = Math.min(period_end_x, bounds.end);
+            const available_width = visible_end_x - visible_start_x - 8;
+
+            if (available_width <= 0) {
+                current_start = current_end;
+                continue;
+            }
+
+            const center_x = visible_start_x + ((visible_end_x - visible_start_x) / 2);
+            const upper_text_element = createSVG('text', {
+                x: center_x,
+                y: this.options.header_height - 25,
+                innerHTML: '',
+                class: 'upper-text bold',
+                append_to: this.date_values_group,
+            });
+
+            const candidates = get_upper_text_candidates(current_start, grouping.unit, this.options.language);
+            const label = pick_fitting_label(candidates, available_width, (candidate) => {
+                const measured = this.measure_svg_text_width(upper_text_element, candidate);
+                return measured != null ? measured : candidate.length * 7;
+            });
+
+            upper_text_element.textContent = label;
+
+            const text_width = this.measure_svg_text_width(upper_text_element, label) || label.length * 7;
+            const text_start = center_x - (text_width / 2);
+
+            if (text_width > available_width || text_start < last_text_end + 8) {
+                upper_text_element.remove();
+                current_start = current_end;
+                continue;
+            }
+
+            last_text_end = center_x + (text_width / 2);
+            current_start = current_end;
+        }
+    }
+
+    get_date_info(date) {
+        const next_date = this.add_tick(date, this.tick_info);
+        const base_pos_x = this.time_to_x(date);
+        const next_pos_x = this.time_to_x(next_date);
+        const column_width = Math.max(next_pos_x - base_pos_x, 1);
+        const lower_text_candidates = get_lower_text_candidates(
+            date,
+            this.tick_info,
+            this.options.language
+        );
+        const lower_text = lower_text_candidates.length
+            ? lower_text_candidates[0]
+            : date_utils.format(date, 'D MMM', this.options.language);
 
         return {
             date,
+            next_date,
             column_width,
-            base_pos_x: base_pos.x,
-            upper_text: date_text[`${this.options.view_mode}_upper`],
-            lower_text: date_text[`${this.options.view_mode}_lower`],
-            upper_x: base_pos.x + x_pos[`${this.options.view_mode}_upper`],
-            upper_y: base_pos.upper_y,
-            lower_x: base_pos.x + x_pos[`${this.options.view_mode}_lower`],
-            lower_y: base_pos.lower_y,
-            hour_pointer,
+            base_pos_x,
+            lower_text,
+            lower_text_candidates,
+            lower_x: base_pos_x + (column_width / 2),
+            lower_y: this.options.header_height,
         };
     }
 
@@ -1077,25 +1207,59 @@ export default class Scheduler {
         const parent_element = this.$svg.parentElement;
         if (!parent_element) return;
 
-        const hours_before_today = date_utils.diff(
-            date_utils.today(),
-            this.scheduler_start,
-            'hour'
-        );
-
-        let scroll_pos;
-        if (this.view_is('Hour'))
-            scroll_pos =
-                hours_before_today *
-                this.options.column_width -
-                this.options.column_width;
-        else
-            scroll_pos =
-                (hours_before_today / this.options.step) *
-                this.options.column_width -
-                this.options.column_width;
+        const scroll_pos = this.time_to_x(date_utils.today()) - this.options.column_width;
 
         parent_element.scrollLeft = scroll_pos;
+    }
+
+    set_zoom_step(step_minutes, anchor_date = null, anchor_screen_x = null) {
+        const previous_view_mode = this.options.view_mode;
+        const clamped_zoom_step = clamp_zoom_step(
+            step_minutes,
+            this.options.zoom_min_step,
+            this.options.zoom_max_step
+        );
+
+        if (Math.abs(clamped_zoom_step - this.options.zoom_step) < 0.0001) {
+            return;
+        }
+
+        this.options.zoom_step = clamped_zoom_step;
+        this.options.step = this.options.zoom_step / 60;
+        this.options.view_mode = get_nearest_view_mode(this.options.zoom_step, this.options.view_modes);
+        this.calendar_tick_unit = get_view_preset(this.options.view_mode).calendar_unit;
+
+        this.is_zooming = true;
+        this.setup_dates();
+        this.render();
+        this.is_zooming = false;
+
+        if (anchor_date && anchor_screen_x != null) {
+            this.$container.scrollLeft = this.time_to_x(anchor_date) - anchor_screen_x;
+        }
+
+        if (this.options.view_mode !== previous_view_mode) {
+            this.trigger_event('view_change', [this.options.view_mode]);
+        }
+
+        this.trigger_event('zoom_change', [this.options.zoom_step]);
+    }
+
+    zoom_in(anchor_date = null, anchor_screen_x = null) {
+        this.set_zoom_step(this.options.zoom_step * 0.85, anchor_date, anchor_screen_x);
+    }
+
+    zoom_out(anchor_date = null, anchor_screen_x = null) {
+        const interactive_max = this.get_interactive_max_zoom_step();
+        if (this.options.zoom_step >= interactive_max) {
+            return;
+        }
+
+        this.set_zoom_step(
+            Math.min(this.options.zoom_step * 1.15, interactive_max),
+            anchor_date,
+            anchor_screen_x
+        );
     }
 
     bind_grid_events() {
@@ -1174,18 +1338,7 @@ export default class Scheduler {
             } else
                 data_id = e.target.getAttribute('data-id');
 
-            const x_in_units = e.offsetX / this.options.column_width;
-            let datetime;
-            if (this.view_is('Hour'))
-                datetime = date_utils.add(
-                    this.scheduler_start,
-                    x_in_units * this.options.step,
-                    'minute');
-            else
-                datetime = date_utils.add(
-                    this.scheduler_start,
-                    x_in_units * this.options.step,
-                    'hour');
+            const datetime = this.x_to_time(this.$container.scrollLeft + e.offsetX);
 
             this.trigger_event('grid_dblclick', [data_id, date_utils.to_local(datetime)]);
         });
@@ -1194,6 +1347,7 @@ export default class Scheduler {
             this.$column_container.scrollTop = e.currentTarget.scrollTop;
             this.layers.date.setAttribute('transform', 'translate(0,' + e.currentTarget.scrollTop + ')');
             this.fixed_col_layers.header.setAttribute('transform', 'translate(0,' + e.currentTarget.scrollTop + ')');
+            this.request_time_axis_render();
         });
 
         $.on(this.$column_container, 'scroll', e => {
@@ -1328,30 +1482,60 @@ export default class Scheduler {
             }
         });
 
-        $.on(this.$container, 'wheel', '.grid, .bar', (e) => {
+        $.on(this.$container, 'wheel', (e) => {
             this.hide_popup();
             e.preventDefault();
+            e.stopPropagation();
 
-            const VIEW_MODES_ORDER = [
-                VIEW_MODE.HOUR,
-                VIEW_MODE.QUARTER_DAY,
-                VIEW_MODE.HALF_DAY,
-                VIEW_MODE.DAY,
-                VIEW_MODE.WEEK,
-                VIEW_MODE.MONTH,
-            ];
+            const delta_multiplier = e.deltaMode === 1
+                ? 16
+                : e.deltaMode === 2
+                    ? this.$container.clientWidth
+                    : 1;
 
-            let curr_index = VIEW_MODES_ORDER.indexOf(this.options.view_mode);
-            const scroll_pos = this.$svg.parentElement.scrollLeft;
-            const scroll_width = this.$svg.parentElement.scrollWidth;
+            this.pending_wheel_delta += e.deltaY * delta_multiplier;
+            this.pending_wheel_event = e;
 
-            if (e.deltaY > 0 && curr_index !== VIEW_MODES_ORDER.length - 1) {
-                this.change_view_mode(VIEW_MODES_ORDER[curr_index + 1]);
-            } else if (e.deltaY < 0 && curr_index > 0) {
-                this.change_view_mode(VIEW_MODES_ORDER[curr_index - 1]);
-            }
+            if (this.wheel_animation_frame) return;
 
-            this.$svg.parentElement.scrollLeft = scroll_pos * (this.$svg.parentElement.scrollWidth / scroll_width);
+            this.wheel_animation_frame = requestAnimationFrame(() => {
+                if (!this.pending_wheel_event) {
+                    this.wheel_animation_frame = null;
+                    return;
+                }
+
+                const wheel_event = this.pending_wheel_event;
+                const wheel_delta = this.pending_wheel_delta;
+                const container_rect = this.$container.getBoundingClientRect();
+                const anchor_screen_x = Math.max(
+                    0,
+                    Math.min(this.$container.clientWidth, wheel_event.clientX - container_rect.left)
+                );
+                const anchor_date = this.x_to_time(this.$container.scrollLeft + anchor_screen_x);
+                const interactive_max = this.get_interactive_max_zoom_step();
+
+                if (wheel_delta > 0 && this.options.zoom_step >= interactive_max) {
+                    this.pending_wheel_delta = 0;
+                    this.pending_wheel_event = null;
+                    this.wheel_animation_frame = null;
+                    return;
+                }
+
+                const target_zoom_step = zoom_step_from_wheel(
+                    this.options.zoom_step,
+                    wheel_delta,
+                    this.options.zoom_min_step,
+                    this.options.zoom_step > interactive_max
+                        ? this.options.zoom_max_step
+                        : interactive_max
+                );
+
+                this.set_zoom_step(target_zoom_step, anchor_date, anchor_screen_x);
+
+                this.pending_wheel_delta = 0;
+                this.pending_wheel_event = null;
+                this.wheel_animation_frame = null;
+            });
         });
     }
 
@@ -1748,7 +1932,7 @@ export default class Scheduler {
             });
         }
         //ticks
-        const ticks = Array.from(this.$svg.querySelectorAll('g.grid > path'));
+        const ticks = Array.from(this.$svg.querySelectorAll('g.grid .grid-ticks path'));
         ticks.forEach(tick => {
             const curr_d = tick.getAttribute('d');
             const new_d = curr_d.replace(/v\s*[^v]*$/, `v ${max_height}`);
@@ -1756,14 +1940,16 @@ export default class Scheduler {
             $.attr(tick, 'd', new_d);
         });
         //highlight
-        if (this.view_is(VIEW_MODE.DAY)) {
-            const today_highlight = this.$svg.getElementsByClassName('today-highlight');
-            $.attr(today_highlight[0], 'height', max_height);
-            const weekend_highlight = Array.from(this.$svg.getElementsByClassName('weekend-highlight'))
-            weekend_highlight.forEach(weekend => {
-                $.attr(weekend, 'height', max_height);
-            });
-        }
+        const today_highlight = Array.from(this.$svg.getElementsByClassName('today-highlight'));
+        today_highlight.forEach(highlight => {
+            const highlight_y = parseFloat(highlight.getAttribute('y')) || 0;
+            $.attr(highlight, 'height', Math.max(max_height - highlight_y, 0));
+        });
+        const weekend_highlight = Array.from(this.$svg.getElementsByClassName('weekend-highlight'))
+        weekend_highlight.forEach(weekend => {
+            const weekend_y = parseFloat(weekend.getAttribute('y')) || 0;
+            $.attr(weekend, 'height', Math.max(max_height - weekend_y, 0));
+        });
         //bars
         const bars_to_move = this.bars.filter(bar =>
             bar.task._index >= row_index
@@ -1888,43 +2074,32 @@ export default class Scheduler {
         });
     }
 
-    get_snap_x_position(dx) {
-        let odx = dx,
-            rem,
-            position,
-            divider;
-
-        switch (this.options.view_mode) {
-            case VIEW_MODE.MONTH:
-                divider = 30;
-                break;
-            case VIEW_MODE.WEEK:
-                divider = 7;
-                break;
-            case VIEW_MODE.DAY:
-                divider = 24;
-                break;
-            case VIEW_MODE.HALF_DAY:
-                divider = 12;
-                break;
-            case VIEW_MODE.QUARTER_DAY:
-                divider = 6;
-                break;
-            case VIEW_MODE.HOUR:
-                divider = 60;
-                break;
-            default:
-                divider = 1
-                break;
+    get_snap_minutes() {
+        if (this.options.zoom_step <= 30) {
+            return 15;
+        } else if (this.options.zoom_step <= 60) {
+            return 30;
+        } else if (this.options.zoom_step <= 12 * 60) {
+            return 60;
+        } else if (this.options.zoom_step <= 24 * 60) {
+            return 120;
+        } else if (this.options.zoom_step <= 7 * 24 * 60) {
+            return 360;
         }
-        rem = dx % (this.options.column_width / divider);
-        position =
-            odx -
-            rem +
-            (rem < this.options.column_width / (2 * divider)
-                ? 0
-                : this.options.column_width / divider);
-        return position;
+
+        return 24 * 60;
+    }
+
+    normalize_snapped_date(date) {
+        const minute_ms = 60 * 1000;
+        return new Date(Math.round(date.getTime() / minute_ms) * minute_ms);
+    }
+
+    get_snap_x_position(dx) {
+        const duration_ms = this.width_to_duration_ms(dx);
+        const snap_ms = this.get_snap_minutes() * 60 * 1000;
+        const snapped_duration_ms = Math.round(duration_ms / snap_ms) * snap_ms;
+        return this.duration_to_width(snapped_duration_ms);
     }
 
     get_snap_y_position(dy) {
