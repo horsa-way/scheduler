@@ -226,6 +226,7 @@ $handle-color: #ddd !default;
         scrollbar-width: none;
         -ms-overflow-style: none;
         overflow: auto;
+        position: relative;
 
         &::-webkit-scrollbar {
             display: none;
@@ -238,10 +239,19 @@ $handle-color: #ddd !default;
         position: relative;
     }
 
+    .scheduler-sticky-header {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        display: block;
+        background: #fff;
+    }
+
     .popup-wrapper {
         position: absolute;
         top: 0;
         left: 0;
+        z-index: 10;
         background: rgba(0, 0, 0, 0.8);
         padding: 0;
         color: #959da5;

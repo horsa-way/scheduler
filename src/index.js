@@ -94,6 +94,7 @@ export default class Scheduler {
         this.$container.classList.add('scheduler-grid-container');
         this.$column_container = document.createElement('div');
         this.$column_container.classList.add('scheduler-columns-container');
+        this.header_sticky_height = this.options.header_height + (this.options.padding / 2);
 
         this.$container_parent = document.createElement('div');
         this.$container_parent.classList.add('scheduler-container');
@@ -103,6 +104,19 @@ export default class Scheduler {
 
         const parent_element = this.$svg.parentElement;
         parent_element.appendChild(this.$container_parent);
+
+        this.$column_header_svg = createSVG('svg', {
+            append_to: this.$column_container,
+            class: 'scheduler scheduler-sticky-header scheduler-sticky-columns',
+        });
+        this.$column_header_svg.style.marginBottom = -this.header_sticky_height + 'px';
+
+        this.$date_svg = createSVG('svg', {
+            append_to: this.$container,
+            class: 'scheduler scheduler-sticky-header scheduler-sticky-date',
+        });
+        this.$date_svg.style.marginBottom = -this.header_sticky_height + 'px';
+
         this.$column_container.appendChild(this.$column_svg);
         this.$container.appendChild(this.$svg);
 
@@ -527,15 +541,17 @@ export default class Scheduler {
         const fixed_col_layers = ['grid', 'cell', 'header'];
         // make group layers
         for (let layer of layers) {
+            const append_target = layer === 'date' ? this.$date_svg : this.$svg;
             this.layers[layer] = createSVG('g', {
                 class: layer,
-                append_to: this.$svg,
+                append_to: append_target,
             });
         }
         for (let layer of fixed_col_layers) {
+            const append_target = layer === 'header' ? this.$column_header_svg : this.$column_svg;
             this.fixed_col_layers[layer] = createSVG('g', {
                 class: layer,
-                append_to: this.$column_svg
+                append_to: append_target
             });
         }
     }
@@ -545,6 +561,7 @@ export default class Scheduler {
         const column_grid_width = this.options.fixed_columns.reduce((acc, curr) => acc + curr.width, 0);
         if (this.options.hide_fixed_columns || column_grid_width === 0) {
             this.$column_svg.setAttribute('width', 0);
+            this.$column_header_svg.setAttribute('width', 0);
             return;
         }
         // make_grid_background
@@ -561,6 +578,10 @@ export default class Scheduler {
         });
         $.attr(this.$column_svg, {
             height: grid_height,
+            width: column_grid_width,
+        });
+        $.attr(this.$column_header_svg, {
+            height: this.header_sticky_height,
             width: column_grid_width,
         });
 
@@ -1201,6 +1222,8 @@ export default class Scheduler {
             .querySelector('.grid .grid-row')
             .getAttribute('width');
         this.$svg.setAttribute('width', actual_width);
+        this.$date_svg.setAttribute('width', actual_width);
+        this.$date_svg.setAttribute('height', this.header_sticky_height);
     }
 
     set_scroll_position() {
@@ -1270,12 +1293,14 @@ export default class Scheduler {
         let x = 0;
         let is_resizing = false;
         let header_tick = null;
-
-        $.on(this.$svg, 'mousedown', '.grid-header, .lower-text, .upper-text, .grid-row, .weekend-highlight, .today-highlight', (e) => {
+        const start_grid_drag = (e) => {
             is_dragging = true;
             start_x = e.pageX;
             scroll_left = scroll.scrollLeft;
-        });
+        };
+
+        $.on(this.$svg, 'mousedown', '.grid-header, .lower-text, .upper-text, .grid-row, .weekend-highlight, .today-highlight', start_grid_drag);
+        $.on(this.$date_svg, 'mousedown', '.grid-header, .lower-text, .upper-text', start_grid_drag);
 
         $.on(this.$container_parent, 'mousemove', '.grid-row, .grid-header, .lower-text, .upper-text, .weekend-highlight', (e) => {
             if (is_dragging) {
@@ -1345,8 +1370,6 @@ export default class Scheduler {
 
         $.on(this.$container, 'scroll', e => {
             this.$column_container.scrollTop = e.currentTarget.scrollTop;
-            this.layers.date.setAttribute('transform', 'translate(0,' + e.currentTarget.scrollTop + ')');
-            this.fixed_col_layers.header.setAttribute('transform', 'translate(0,' + e.currentTarget.scrollTop + ')');
             this.request_time_axis_render();
         });
 
@@ -1354,7 +1377,7 @@ export default class Scheduler {
             this.$container.scrollTop = e.currentTarget.scrollTop;
         });
 
-        $.on(this.$column_svg, 'mousedown', '.header-tick', (e) => {
+        $.on(this.$column_header_svg, 'mousedown', '.header-tick', (e) => {
             is_resizing = true;
             x = e.clientX;
             header_tick = e.target;
@@ -1416,7 +1439,7 @@ export default class Scheduler {
                     $.attr(header_tick, 'd', new_d_attr);
 
                     //other tick
-                    const header_ticks = this.$column_svg.querySelectorAll('g.header > path');
+                    const header_ticks = this.$column_header_svg.querySelectorAll('g.header > path');
                     header_ticks.forEach(tick => {
                         if (tick !== header_tick) {
                             const d_attr = tick.getAttribute('d');
@@ -1432,11 +1455,12 @@ export default class Scheduler {
                     const current_width = parseInt(this.$column_svg.getAttribute('width'));
                     const new_width = current_width + delta_x;
                     $.attr(this.$column_svg, 'width', new_width);
+                    $.attr(this.$column_header_svg, 'width', new_width);
 
                     //header
-                    $.attr(this.$column_svg.querySelector('g.header > rect.grid-header'), 'width', new_width);
+                    $.attr(this.$column_header_svg.querySelector('g.header > rect.grid-header'), 'width', new_width);
                     //header text
-                    const header_text = this.$column_svg.querySelectorAll('g.header > text.lower-text.bold');
+                    const header_text = this.$column_header_svg.querySelectorAll('g.header > text.lower-text.bold');
                     const text_to_resize = header_tick.previousSibling;
                     header_text.forEach(text => {
                         const text_x = parseFloat(text.getAttribute('x'));
@@ -2195,6 +2219,8 @@ export default class Scheduler {
     clear() {
         this.$svg.innerHTML = '';
         this.$column_svg.innerHTML = '';
+        this.$date_svg.innerHTML = '';
+        this.$column_header_svg.innerHTML = '';
     }
 }
 
