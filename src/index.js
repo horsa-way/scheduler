@@ -18,6 +18,12 @@ import {
     get_upper_text_candidates,
     pick_fitting_label,
 } from './date_labels';
+import {
+    find_row_id_at_svg_y,
+    get_pointer_x_in_container,
+    get_timeline_x_from_client,
+    snap_date_to_minutes,
+} from './interaction_utils';
 
 import './scheduler.scss';
 
@@ -1350,22 +1356,36 @@ export default class Scheduler {
             }
         });
 
-        $.on(this.$svg, 'dblclick', '.grid-row, .weekend-highlight, .today-highlight', (e) => {
+        $.on(this.$svg, 'dblclick', '.grid-row, .weekend-highlight, .today-highlight', (e, delegated_target) => {
+            const container_rect = this.$container.getBoundingClientRect();
+            const svg_rect = this.$svg.getBoundingClientRect();
+
+            const timeline_x = get_timeline_x_from_client(
+                e.clientX,
+                container_rect.left,
+                this.$container.clientWidth,
+                this.$container.scrollLeft
+            );
+
             let data_id;
-            if (e.target.classList.contains('weekend-highlight') || e.target.classList.contains('today-highlight')) {
-                let prev_y = 0;
-                this.rows.forEach(row => {
-                    if (e.offsetY >= prev_y && e.offsetY < row.y)
-                        return;
-                    data_id = row.id;
-                    prev_y = row.y;
-                })
-            } else
-                data_id = e.target.getAttribute('data-id');
+            if (
+                delegated_target.classList.contains('weekend-highlight') ||
+                delegated_target.classList.contains('today-highlight')
+            ) {
+                const svg_y = e.clientY - svg_rect.top;
+                data_id = find_row_id_at_svg_y(this.rows, svg_y);
+            } else {
+                data_id = delegated_target.getAttribute('data-id');
+            }
 
-            const datetime = this.x_to_time(this.$container.scrollLeft + e.offsetX);
+            if (!data_id) {
+                return;
+            }
 
-            this.trigger_event('grid_dblclick', [data_id, date_utils.to_local(datetime)]);
+            const datetime = this.x_to_time(timeline_x);
+            const snapped_datetime = snap_date_to_minutes(datetime, this.get_snap_minutes());
+
+            this.trigger_event('grid_dblclick', [data_id, date_utils.to_local(snapped_datetime)]);
         });
 
         $.on(this.$container, 'scroll', e => {
@@ -1531,11 +1551,18 @@ export default class Scheduler {
                 const wheel_event = this.pending_wheel_event;
                 const wheel_delta = this.pending_wheel_delta;
                 const container_rect = this.$container.getBoundingClientRect();
-                const anchor_screen_x = Math.max(
-                    0,
-                    Math.min(this.$container.clientWidth, wheel_event.clientX - container_rect.left)
+                const anchor_screen_x = get_pointer_x_in_container(
+                    wheel_event.clientX,
+                    container_rect.left,
+                    this.$container.clientWidth
                 );
-                const anchor_date = this.x_to_time(this.$container.scrollLeft + anchor_screen_x);
+                const anchor_timeline_x = get_timeline_x_from_client(
+                    wheel_event.clientX,
+                    container_rect.left,
+                    this.$container.clientWidth,
+                    this.$container.scrollLeft
+                );
+                const anchor_date = this.x_to_time(anchor_timeline_x);
                 const interactive_max = this.get_interactive_max_zoom_step();
 
                 if (wheel_delta > 0 && this.options.zoom_step >= interactive_max) {
