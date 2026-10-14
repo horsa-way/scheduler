@@ -24,6 +24,7 @@ import {
     get_timeline_x_from_client,
     snap_date_to_minutes,
 } from './interaction_utils';
+import { get_weekend_ranges_in_viewport } from './calendar_highlights';
 
 import './scheduler.scss';
 
@@ -943,26 +944,44 @@ export default class Scheduler {
 
     make_grid_highlights() {
         const bounds = this.get_viewport_x_bounds();
+        const highlight_y = this.options.header_height + this.options.padding / 2;
+        const highlight_height = this.rows[this.rows.length - 1].y +
+            this.rows[this.rows.length - 1].height - highlight_y;
+
         const today = date_utils.today();
         const start_of_today = date_utils.start_of(today, 'day');
         const tomorrow = date_utils.add(start_of_today, 1, 'day');
-        const x = this.time_to_x(start_of_today);
-        const width = this.duration_to_width(tomorrow.getTime() - start_of_today.getTime());
+        const today_x = this.time_to_x(start_of_today);
+        const today_width = this.duration_to_width(tomorrow.getTime() - start_of_today.getTime());
 
-        if ((x + width) < bounds.start || x > bounds.end) {
-            return;
+        if (!((today_x + today_width) < bounds.start || today_x > bounds.end)) {
+            createSVG('rect', {
+                x: today_x,
+                y: highlight_y,
+                width: today_width,
+                height: highlight_height,
+                class: 'today-highlight',
+                append_to: this.grid_highlights_group,
+            });
         }
 
-        const y = this.options.header_height + this.options.padding / 2;
-        const height = this.rows[this.rows.length - 1].y +
-            this.rows[this.rows.length - 1].height - y;
-        createSVG('rect', {
-            x,
-            y,
-            width,
-            height,
-            class: 'today-highlight',
-            append_to: this.grid_highlights_group,
+        const view_start_date = this.x_to_time(bounds.start);
+        const view_end_date = this.x_to_time(bounds.end);
+        const weekend_ranges = get_weekend_ranges_in_viewport(
+            view_start_date,
+            view_end_date,
+            this.tick_info
+        );
+
+        weekend_ranges.forEach((range) => {
+            createSVG('rect', {
+                x: this.time_to_x(range.start),
+                y: highlight_y,
+                width: this.time_to_x(range.end) - this.time_to_x(range.start),
+                height: highlight_height,
+                class: 'weekend-highlight',
+                append_to: this.grid_highlights_group,
+            });
         });
     }
 
@@ -988,27 +1007,6 @@ export default class Scheduler {
                 class: this.get_tick_class(d.next_date),
                 append_to: this.date_values_group,
             });
-
-            if ((d.date.getUTCDay() === 6 || d.date.getUTCDay() === 0) &&
-                this.tick_info.unit === 'minute' && this.tick_info.value < 24 * 60) {
-
-                const highlight_y = d.lower_y + (this.options.padding / 2);
-                const highlight_x = d.base_pos_x;
-                const highlight_width = d.column_width;
-                const highlight_height = this.rows[this.rows.length - 1].y +
-                    this.rows[this.rows.length - 1].height -
-                    this.options.header_height -
-                    (this.options.padding / 2);
-
-                createSVG('rect', {
-                    x: highlight_x,
-                    y: highlight_y,
-                    width: highlight_width,
-                    height: highlight_height,
-                    class: 'weekend-highlight',
-                    append_to: this.grid_highlights_group,
-                });
-            }
             return d;
         });
 

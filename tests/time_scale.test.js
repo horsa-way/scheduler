@@ -50,3 +50,11 @@ test('get_tick_step_minutes preserves half-day subdivisions', () => {
 test('get_tick_step_minutes preserves quarter-day subdivisions', () => {
     expect(get_tick_step_minutes(6 * 60, 48)).toBe(6 * 60);
 });
+
+test('get_tick_step_minutes can stay daily above 1440 depending on column width', () => {
+    expect(get_tick_step_minutes(2000, 60)).toBe(24 * 60);
+});
+
+test('get_tick_step_minutes can jump to two-day ticks with narrower columns', () => {
+    expect(get_tick_step_minutes(2000, 48)).toBe(48 * 60);
+});
