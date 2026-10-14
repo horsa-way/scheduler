@@ -1520,6 +1520,13 @@ export default class Scheduler {
                     fixed_grid_rows.forEach(row => {
                         $.attr(row, 'width', new_width);
                     });
+
+                    // keep horizontal separators aligned with resized fixed columns
+                    this.rows.forEach(row => {
+                        if (row.fixed_line) {
+                            $.attr(row.fixed_line, 'x2', new_width);
+                        }
+                    });
                 }
             }
         });
